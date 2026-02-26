@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOLILOQUY | Heartbreak Ink</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0a0a12; font-family: 'Courier New', monospace; user-select: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .center-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffffff;
+            font-size: 14px;
+            letter-spacing: 4px;
+            opacity: 1;
+            transition: opacity 0.5s;
+        }
+
+        .title-container {
+            position: absolute;
+            top: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            opacity: 0; /* GSAP will handle fade in */
+        }
+
+        h1 {
+            color: #ffffff;
+            font-size: 4rem;
+            letter-spacing: 1.5rem;
+            font-weight: 300;
+            margin: 0;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+
+        .subtitle {
+            color: #ffffff;
+            font-size: 0.8rem;
+            letter-spacing: 0.8rem;
+            margin-top: 10px;
+            text-transform: lowercase;
+            opacity: 0;
+        }
+
+        .watermark {
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            color: #ffffff;
+            font-size: 10px;
+            letter-spacing: 2px;
+            opacity: 0.3;
+        }
+
+        /* The Wild Card: Cinematic Letterboxing */
+        .cinematic-bar {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 0; /* Animated to 10% */
+            background: #000;
+            z-index: 20;
+        }
+        .bar-top { top: 0; }
+        .bar-bottom { bottom: 0; }
+
+        /* Loader Glitch Effect */
+        @keyframes glitch {
+            0% { transform: translate(0) }
+            20% { transform: translate(-2px, 2px) }
+            40% { transform: translate(-2px, -2px) }
+            60% { transform: translate(2px, 2px) }
+            80% { transform: translate(2px, -2px) }
+            100% { transform: translate(0) }
+        }
+        .glitch {
+            animation: glitch 0.3s cubic-bezier(.25, .46, .45, .94) both infinite;
+        }
+    </style>
+    
+    <!-- GSAP -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    
+    <!-- Import Map -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="loader" class="center-text glitch">CASTING...</div>
+        
+        <div class="title-container">
+            <h1 id="main-title">SOLILOQUY</h1>
+            <div id="subtitle" class="subtitle">a heartbreak ink film</div>
+        </div>
+
+        <div class="watermark">HEARTBREAK INK // FLUX</div>
+
+        <!-- Wild Card Elements -->
+        <div class="cinematic-bar bar-top"></div>
+        <div class="cinematic-bar bar-bottom"></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+        // --- CONFIGURATION ---
+        const CONFIG = {
+            avatarUrl: 'https://models.readyplayer.me/64f1a7143f2f95f8cfc4f0b5.glb',
+            colors: {
+                bg: 0x0a0a12,
+                key: 0x4488ff,
+                fill: 0xff6633,
+                rim: 0xffffff
+            },
+            bloom: { strength: 0.7, radius: 0.4, threshold: 0.25 },
+            camera: { radius: 3.5, height: 1.4, speed: 45 } // seconds per revolution
+        };
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(CONFIG.colors.bg);
+        scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.06);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, CONFIG.camera.height, CONFIG.camera.radius);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(CONFIG.colors.bg, 0.5);
+        scene.add(ambientLight);
+
+        // Key Light (Cool Blue)
+        const keyLight = new THREE.SpotLight(CONFIG.colors.key, 20);
+        keyLight.position.set(3, 4, 3);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.width = 2048;
+        keyLight.shadow.mapSize.height = 2048;
+        keyLight.shadow.bias = -0.0001;
+        keyLight.angle = Math.PI / 6;
+        keyLight.penumbra = 0.3;
+        scene.add(keyLight);
+
+        // Fill Light (Warm Orange)
+        const fillLight = new THREE.PointLight(CONFIG.colors.fill, 5);
+        fillLight.position.set(-3, 2, 3);
+        scene.add(fillLight);
+
+        // Rim Light (Sharp White)
+        const rimLight = new THREE.SpotLight(CONFIG.colors.rim, 15);
+        rimLight.position.set(0, 4, -4);
+        scene.add(rimLight);
+        // Target for rim light to ensure it hits the model center
+        const rimTarget = new THREE.Object3D();
+        rimTarget.position.set(0, 1, 0);
+        scene.add(rimTarget);
+        rimLight.target = rimTarget;
+
+
+        // --- STAGE ---
+        const groundGeo = new THREE.PlaneGeometry(50, 50);
+        const groundMat = new THREE.MeshStandardMaterial({
+            color: CONFIG.colors.bg,
+            metalness: 0.9,
+            roughness: 0.1,
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // --- ATMOSPHERE: WIREFRAMES ---
+        const icoGroup = new THREE.Group();
+        const icoGeo = new THREE.IcosahedronGeometry(1, 0);
+        
+        for (let i = 0; i < 8; i++) {
+            const mat = new THREE.MeshBasicMaterial({ 
+                color: Math.random() > 0.5 ? 0x4488ff : 0xff6633, // Subtle blue/orange tint match
+                wireframe: true, 
+                transparent: true, 
+                opacity: 0.15 
+            });
+            const mesh = new THREE.Mesh(icoGeo, mat);
+            // Scatter 5-12 units away
+            const r = 5 + Math.random() * 7;
+            const theta = Math.random() * Math.PI * 2;
+            mesh.position.set(
+                Math.cos(theta) * r,
+                0.5 + Math.random() * 4,
+                Math.sin(theta) * r
+            );
+            mesh.rotation.set(Math.random(), Math.random(), Math.random());
+            mesh.scale.setScalar(0.5 + Math.random() * 0.5);
+            mesh.userData = {
+                rotSpeed: { x: (Math.random() - 0.5) * 0.002, y: (Math.random() - 0.5) * 0.002 }
+            };
+            icoGroup.add(mesh);
+        }
+        scene.add(icoGroup);
+
+        // --- ATMOSPHERE: DUST ---
+        const dustCount = 300;
+        const dustGeo = new THREE.BufferGeometry();
+        const dustPos = new Float32Array(dustCount * 3);
+        const dustSpeeds = new Float32Array(dustCount); // Store individual speeds
+        
+        for(let i=0; i<dustCount; i++) {
+            dustPos[i*3] = (Math.random() - 0.5) * 20;
+            dustPos[i*3+1] = Math.random() * 5;
+            dustPos[i*3+2] = (Math.random() - 0.5) * 20;
+            dustSpeeds[i] = 0.0005 + Math.random() * 0.002;
+        }
+        dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+        
+        const dustMat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.03,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const dustSystem = new THREE.Points(dustGeo, dustMat);
+        scene.add(dustSystem);
+
+
+        // --- AVATAR & ANIMATION ---
+        let model = null;
+        let spineBone = null;
+
+        const loader = new GLTFLoader();
+        loader.load(CONFIG.avatarUrl, (gltf) => {
+            model = gltf.scene;
+            
+            // Setup shadows
+            model.traverse((o) => {
+                if (o.isMesh) {
+                    o.castShadow = true;
+                    o.receiveShadow = true;
+                }
+                // Attempt to find spine for breathing
+                if (o.isBone && (o.name === 'Spine2' || o.name === 'Spine1' || o.name === 'Spine')) {
+                    if (!spineBone || o.name === 'Spine2') spineBone = o; // Prefer Spine2
+                }
+            });
+
+            scene.add(model);
+            
+            // Fade out loader
+            const loaderEl = document.getElementById('loader');
+            gsap.to(loaderEl, { opacity: 0, duration: 1, onComplete: () => loaderEl.remove() });
+
+            // Animate Titles
+            animateUI();
+
+        }, undefined, (error) => {
+            console.error('An error happened', error);
+        });
+
+        function animateUI() {
+            const tl = gsap.timeline();
+            
+            // Letterbox slide in
+            tl.to('.cinematic-bar', { height: '10vh', duration: 2, ease: "power2.inOut" }, 0);
+            
+            // Text Animations
+            const title = document.querySelector('.title-container');
+            const mainTitle = document.getElementById('main-title');
+            const subtitle = document.getElementById('subtitle');
+
+            // 1. Title container fades in
+            tl.to(title, { opacity: 1, duration: 2 }, 1);
+            
+            // 2. Settle opacity for Title
+            tl.to(mainTitle, { opacity: 0.12, duration: 2 }, 3);
+
+            // 3. Subtitle fade in then settle
+            tl.to(subtitle, { opacity: 1, duration: 1 }, 2);
+            tl.to(subtitle, { opacity: 0.1, duration: 2 }, 3.5);
+        }
+
+        // --- POST PROCESSING ---
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = CONFIG.bloom.threshold;
+        bloomPass.strength = CONFIG.bloom.strength;
+        bloomPass.radius = CONFIG.bloom.radius;
+        composer.addPass(bloomPass);
+
+        const FilmGrainShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "time": { value: 0.0 },
+                "nIntensity": { value: 0.15 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float nIntensity;
+                uniform sampler2D tDiffuse;
+                varying vec2 vUv;
+                void main() {
+                    vec4 c = texture2D(tDiffuse, vUv);
+                    float x = vUv.x * vUv.y * time * 1000.0;
+                    x = mod(x, 13.0) * mod(x, 123.0);
+                    float dx = mod(x, 0.01);
+                    vec3 r = c.rgb + c.rgb * clamp(0.1 + dx * 100.0, 0.0, 1.0);
+                    gl_FragColor = vec4(c.rgb + clamp(nIntensity, 0.0, 1.0) * (r - c.rgb), c.a);
+                }
+            `
+        };
+
+        const grainPass = new ShaderPass(FilmGrainShader);
+        grainPass.renderToScreen = true;
+        composer.addPass(grainPass);
+
+
+        // --- ANIMATION LOOP ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+
+            // 1. Camera Orbit
+            // Radius 3.5, Height 1.4, Period 45s
+            // To orbit, we use cos/sin. 
+            // 45s per revolution => frequency = 1/45 Hz => angular frequency = 2*PI/45 rad/s
+            const angle = (time * (Math.PI * 2) / CONFIG.camera.speed) + Math.PI/2; // Offset start
+            
+            camera.position.x = Math.sin(angle) * CONFIG.camera.radius;
+            camera.position.z = Math.cos(angle) * CONFIG.camera.radius;
+            
+            // Vertical Bob (Sinusoidal)
+            // "slight vertical sinusoidal bob"
+            camera.position.y = CONFIG.camera.height + Math.sin(time * 0.5) * 0.05; 
+            
+            camera.lookAt(0, 0.9, 0); // Look slightly below head (chest area)
+
+            // 2. Avatar Breathing (Procedural)
+            if (spineBone) {
+                // Subtle scale Y oscillation: 0.998 to 1.002
+                // Period ~4s => time * 1.5 is approx 4s cycle
+                const breathVal = 1.0 + Math.sin(time * 2.5) * 0.002;
+                spineBone.scale.set(1, breathVal, 1);
+            }
+
+            // 3. Bloom Breathing
+            // "sinusoidal 0.5-0.9 over ~4 second cycle"
+            // center = 0.7, amp = 0.2. 
+            // 4s cycle => freq = 0.25 Hz => w = 2*PI*0.25 = PI/2 = ~1.57
+            bloomPass.strength = 0.7 + Math.sin(time * 1.57) * 0.2; 
+
+            // 4. Update Grain Shader Time
+            grainPass.uniforms.time.value = time;
+
+            // 5. Animate Background Elements (Icosahedrons)
+            icoGroup.children.forEach(mesh => {
+                mesh.rotation.x += mesh.userData.rotSpeed.x;
+                mesh.rotation.y += mesh.userData.rotSpeed.y;
+            });
+
+            // 6. Dust Drift
+            // Access buffer attribute directly
+            const positions = dustSystem.geometry.attributes.position.array;
+            for(let i=0; i<dustCount; i++) {
+                // Y is index i*3 + 1
+                positions[i*3+1] += dustSpeeds[i];
+                if(positions[i*3+1] > 5) positions[i*3+1] = 0; // Reset to bottom
+            }
+            dustSystem.geometry.attributes.position.needsUpdate = true;
+
+            composer.render();
+        }
+
+        // --- RESIZE HANDLER ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
