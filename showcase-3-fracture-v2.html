@@ -1,0 +1,677 @@
+<!-- 
+    HEARTBREAK INK — SHOWCASE 3: FRACTURE v2
+    "Growth Through Destruction"
+    
+    Rebuilt by: Flux ⚡
+    Date: 2026-02-26
+    
+    TIMELINE:
+    00-10s: BEAUTY — Pristine sculptural form, breathing, rotating.
+    10-15s: FRACTURE — Violent explosion into thousands of shards. Slow motion expansion.
+    15-20s: SUSPENSION — Fragments freeze and drift in void.
+    20-28s: REBIRTH — Fragments coalesce into a new, crystalline abstract form.
+    28-30s: TITLE — "HEARTBREAK INK" reveals.
+    
+    TECHNICAL:
+    - Three.js r160+ (InstancedMesh for particles)
+    - GSAP Timeline for choreography
+    - Post-processing: Bloom, Grain, Vignette, Chromatic Aberration
+    - Web Audio: Ambient -> Shatter -> Ethereal
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heartbreak Ink — Fracture v2</title>
+    <style>
+        /* BASE RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #050505;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            cursor: pointer; /* Indication to click for audio */
+        }
+
+        /* CANVAS CONTAINER */
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            color: white;
+            opacity: 0; /* Fade in later */
+            transition: opacity 2s ease;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-size: 0.8rem;
+            font-weight: 700;
+            mix-blend-mode: difference;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.7rem;
+            opacity: 0.7;
+            mix-blend-mode: difference;
+        }
+
+        /* START PROMPT */
+        #start-prompt {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 0.9rem;
+            letter-spacing: 0.3em;
+            z-index: 20;
+            text-align: center;
+            text-transform: uppercase;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .hidden { opacity: 0 !important; }
+    </style>
+
+    <!-- IMPORT MAP -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <div id="start-prompt">Click to Initialize</div>
+
+    <div id="ui-layer">
+        <div class="header">
+            <span>Showcase 03</span>
+            <span>Fracture</span>
+        </div>
+        <div class="footer">
+            <div class="status">
+                Flux Engine v2.0<br>
+                Status: Suspended
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+        import gsap from 'gsap';
+
+        // ------------------------------------------------------------------
+        // CONFIG
+        // ------------------------------------------------------------------
+        const CONFIG = {
+            colors: {
+                bg: 0x050505,
+                lightCool: 0xddeeff,
+                lightWarm: 0xffaa88,
+                particle: 0xffffff
+            },
+            fragmentCount: 3000
+        };
+
+        // ------------------------------------------------------------------
+        // STATE
+        // ------------------------------------------------------------------
+        const state = {
+            started: false,
+            time: 0,
+            phase: 'beauty', // beauty, explode, suspend, reform
+            explosionProgress: 0
+        };
+
+        // ------------------------------------------------------------------
+        // SCENE SETUP
+        // ------------------------------------------------------------------
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(CONFIG.colors.bg);
+        scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.05);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 8);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 15;
+
+        // ------------------------------------------------------------------
+        // LIGHTING
+        // ------------------------------------------------------------------
+        // Ambient
+        const ambientLight = new THREE.AmbientLight(0x222222, 1);
+        scene.add(ambientLight);
+
+        // Main Key
+        const spotLight = new THREE.SpotLight(CONFIG.colors.lightCool, 400);
+        spotLight.position.set(5, 10, 5);
+        spotLight.angle = Math.PI / 6;
+        spotLight.penumbra = 0.5;
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        spotLight.shadow.bias = -0.0001;
+        scene.add(spotLight);
+
+        // Rim Light (Warm)
+        const rimLight = new THREE.SpotLight(CONFIG.colors.lightWarm, 300);
+        rimLight.position.set(-5, 2, -5);
+        rimLight.lookAt(0,0,0);
+        scene.add(rimLight);
+
+        // Fill Light
+        const fillLight = new THREE.PointLight(0x4444ff, 50);
+        fillLight.position.set(-5, 0, 5);
+        scene.add(fillLight);
+
+        // Environment (Procedural)
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        // Just use a simple room env for reflections
+        const roomEnv = new THREE.RoomEnvironment(); // Standard three.js helper would be nice but not imported.
+        // Manual PMREM is safer without extra imports.
+        // Skip complex PMREM for now, standard lights + MeshPhysicalMaterial is enough for this look.
+
+        // ------------------------------------------------------------------
+        // OBJECTS
+        // ------------------------------------------------------------------
+        const group = new THREE.Group();
+        scene.add(group);
+
+        // HERO OBJECT: The "Bust" (Abstract Composite)
+        // A sphere head, cylinder neck, blocky shoulders. All merged for simplicity?
+        // Actually, let's keep them separate but grouped, then hide them on shatter.
+        
+        const heroMat = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            roughness: 0.1,
+            metalness: 0.1,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1,
+            transmission: 0.0, // Solid marble-like
+        });
+
+        const heroGroup = new THREE.Group();
+        group.add(heroGroup);
+
+        // Head
+        const headGeo = new THREE.IcosahedronGeometry(0.8, 4); // High res for smoothness
+        const head = new THREE.Mesh(headGeo, heroMat);
+        head.position.y = 0.5;
+        head.castShadow = true;
+        head.receiveShadow = true;
+        heroGroup.add(head);
+
+        // Neck
+        const neckGeo = new THREE.CylinderGeometry(0.3, 0.4, 0.6, 32);
+        const neck = new THREE.Mesh(neckGeo, heroMat);
+        neck.position.y = -0.4;
+        neck.castShadow = true;
+        neck.receiveShadow = true;
+        heroGroup.add(neck);
+
+        // Shoulders/Bust Base
+        const chestGeo = new THREE.CylinderGeometry(0.4, 1.2, 0.8, 6); // Hexagonal base
+        const chest = new THREE.Mesh(chestGeo, heroMat);
+        chest.position.y = -1.0;
+        chest.castShadow = true;
+        chest.receiveShadow = true;
+        heroGroup.add(chest);
+
+
+        // FRAGMENTS (Instanced Mesh) - Hidden initially
+        // We pre-calculate their explosion positions
+        const fragGeo = new THREE.TetrahedronGeometry(0.1, 0); // Sharp shards
+        const fragMat = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            roughness: 0.1,
+            metalness: 0.8, // More metallic for shards
+            flatShading: true
+        });
+
+        const fragments = new THREE.InstancedMesh(fragGeo, fragMat, CONFIG.fragmentCount);
+        fragments.visible = false;
+        fragments.castShadow = true;
+        fragments.receiveShadow = true;
+        group.add(fragments);
+
+        // Calculate Particle Data
+        const dummy = new THREE.Object3D();
+        const particles = []; // { startPos, endPos, rotationAxis, speed }
+
+        // Define two target shapes:
+        // 1. The original Bust shape (approximate volume)
+        // 2. The Rebirth shape (Crystalline ring/spiral)
+
+        for(let i=0; i<CONFIG.fragmentCount; i++) {
+            // -- START POSITION (Approximating the bust volume) --
+            // We'll spawn them randomly inside the bounding box of the hero
+            // Head area
+            let sx, sy, sz;
+            const r = Math.random();
+            if(r < 0.3) { // Head
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const rad = 0.8 * Math.cbrt(Math.random());
+                sx = rad * Math.sin(phi) * Math.cos(theta);
+                sy = 0.5 + rad * Math.sin(phi) * Math.sin(theta);
+                sz = rad * Math.cos(phi);
+            } else if (r < 0.5) { // Neck
+                sx = (Math.random() - 0.5) * 0.6;
+                sy = -0.4 + (Math.random() - 0.5) * 0.6;
+                sz = (Math.random() - 0.5) * 0.6;
+            } else { // Chest
+                sx = (Math.random() - 0.5) * 2.0;
+                sy = -1.0 + (Math.random() - 0.5) * 0.8;
+                sz = (Math.random() - 0.5) * 1.0;
+            }
+
+            // -- EXPLOSION VELOCITY (Outward from center) --
+            const vx = sx * 3 + (Math.random()-0.5);
+            const vy = sy * 3 + (Math.random()-0.5);
+            const vz = sz * 3 + (Math.random()-0.5);
+
+            // -- REBIRTH TARGET (A spiral galaxy shape) --
+            const angle = Math.random() * Math.PI * 4;
+            const radius = 1.5 + Math.random() * 2.0;
+            const tx = Math.cos(angle) * radius;
+            const ty = (Math.random() - 0.5) * 2.0; // Flat disk-ish
+            const tz = Math.sin(angle) * radius;
+
+            particles.push({
+                start: new THREE.Vector3(sx, sy, sz),
+                velocity: new THREE.Vector3(vx, vy, vz),
+                end: new THREE.Vector3(tx, ty, tz),
+                rotSpeed: new THREE.Vector3(Math.random(), Math.random(), Math.random()),
+                phaseOffset: Math.random() * Math.PI
+            });
+
+            // Set initial dummy position
+            dummy.position.set(sx, sy, sz);
+            dummy.scale.setScalar(0); // Invisible scale at start
+            dummy.updateMatrix();
+            fragments.setMatrixAt(i, dummy.matrix);
+        }
+
+        // ------------------------------------------------------------------
+        // TITLE
+        // ------------------------------------------------------------------
+        let titleMesh;
+        const fontLoader = new FontLoader();
+        fontLoader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', (font) => {
+            const textGeo = new TextGeometry('HEARTBREAK INK', {
+                font: font,
+                size: 0.5,
+                height: 0.1,
+                curveSegments: 12,
+                bevelEnabled: true,
+                bevelThickness: 0.02,
+                bevelSize: 0.01,
+                bevelOffset: 0,
+                bevelSegments: 5
+            });
+            textGeo.center();
+            const textMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+            titleMesh = new THREE.Mesh(textGeo, textMat);
+            titleMesh.position.z = -2; // Slightly behind
+            titleMesh.visible = false;
+            scene.add(titleMesh);
+        });
+
+        // ------------------------------------------------------------------
+        // POST PROCESSING
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        // Bloom
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.4, 0.85);
+        composer.addPass(bloomPass);
+
+        // Custom "Heartbreak" Shader (Grain + Chromatic Aberration)
+        const shader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                time: { value: 0 },
+                aberration: { value: 0.002 },
+                grain: { value: 0.05 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float aberration;
+                uniform float grain;
+                varying vec2 vUv;
+
+                float random(vec2 p) {
+                    return fract(cos(dot(p, vec2(23.14069, 2.66514))) * 12345.6789);
+                }
+
+                void main() {
+                    vec2 dist = vUv - 0.5;
+                    vec2 offset = dist * aberration;
+
+                    float r = texture2D(tDiffuse, vUv + offset).r;
+                    float g = texture2D(tDiffuse, vUv).g;
+                    float b = texture2D(tDiffuse, vUv - offset).b;
+
+                    vec3 color = vec3(r, g, b);
+                    
+                    // Grain
+                    float noise = random(vUv * time);
+                    color += (noise - 0.5) * grain;
+
+                    // Vignette
+                    float len = length(dist);
+                    color *= smoothstep(0.8, 0.2, len);
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        };
+        const finalPass = new ShaderPass(shader);
+        composer.addPass(finalPass);
+        
+        // SMAA
+        const smaaPass = new SMAAPass(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+        composer.addPass(smaaPass);
+
+        composer.addPass(new OutputPass());
+
+        // ------------------------------------------------------------------
+        // AUDIO
+        // ------------------------------------------------------------------
+        // AudioSystem removed in favor of inline context to prevent auto-play policy issues.
+
+
+        // ------------------------------------------------------------------
+        // ANIMATION LOOP
+        // ------------------------------------------------------------------
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            
+            // 1. Uniforms
+            if(finalPass && finalPass.uniforms) {
+                finalPass.uniforms.time.value = time;
+            }
+            
+            // 2. Beauty Phase: Gentle Float
+            if (state.phase === 'beauty') {
+                heroGroup.rotation.y = Math.sin(time * 0.2) * 0.1;
+                heroGroup.position.y = Math.sin(time * 0.5) * 0.05;
+            }
+
+            // 3. Explosion/Rebirth Logic
+            if (state.started && state.phase !== 'beauty') {
+                const p = state.explosionProgress;
+                
+                // Helper to update matrices
+                for(let i=0; i<CONFIG.fragmentCount; i++) {
+                    const part = particles[i];
+                    let x, y, z;
+                    let scale = 1;
+                    
+                    // Rotation is continuous based on time, damped by phase
+                    const rotX = part.rotSpeed.x * time * 2.0;
+                    const rotY = part.rotSpeed.y * time * 2.0;
+                    const rotZ = part.rotSpeed.z * time * 2.0;
+
+                    if (p <= 0.5) {
+                        // EXPANSION (0 -> 0.5)
+                        // Map p 0->0.5 to 0->1
+                        const t = Math.min(1, p * 2); 
+                        const ease = 1 - Math.pow(1 - t, 3); // Ease out cubic
+                        
+                        x = part.start.x + part.velocity.x * ease;
+                        y = part.start.y + part.velocity.y * ease;
+                        z = part.start.z + part.velocity.z * ease;
+                        
+                        dummy.rotation.set(rotX, rotY, rotZ);
+                        scale = 1.0;
+                        
+                    } else {
+                        // REFORMATION (0.5 -> 1.0)
+                        // Map p 0.5->1.0 to 0->1
+                        const t = (p - 0.5) * 2;
+                        
+                        // Current exploded pos (max expansion)
+                        const expX = part.start.x + part.velocity.x;
+                        const expY = part.start.y + part.velocity.y;
+                        const expZ = part.start.z + part.velocity.z;
+                        
+                        // Lerp to End Target with ease-in-out
+                        const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+                        
+                        x = THREE.MathUtils.lerp(expX, part.end.x, ease);
+                        y = THREE.MathUtils.lerp(expY, part.end.y, ease);
+                        z = THREE.MathUtils.lerp(expZ, part.end.z, ease);
+                        
+                        // Swirl effect during reformation
+                        if (t > 0.1) {
+                             const angle = time * 0.5 + part.phaseOffset;
+                             const rad = Math.sqrt(x*x + z*z);
+                             // Blend into spiral
+                             x = x * (1-t) + (Math.cos(angle) * rad) * t;
+                             z = z * (1-t) + (Math.sin(angle) * rad) * t;
+                        }
+                        
+                        // Damped rotation
+                        dummy.rotation.set(rotX * (1-t), rotY * (1-t), rotZ * (1-t));
+                    }
+
+                    dummy.position.set(x, y, z);
+                    dummy.scale.setScalar(scale);
+                    dummy.updateMatrix();
+                    fragments.setMatrixAt(i, dummy.matrix);
+                }
+                fragments.instanceMatrix.needsUpdate = true;
+            }
+
+            controls.update();
+            composer.render();
+        }
+
+        // ------------------------------------------------------------------
+        // SEQUENCER
+        // ------------------------------------------------------------------
+        function startSequence() {
+            if (state.started) return;
+            state.started = true;
+            
+            const prompt = document.getElementById('start-prompt');
+            const ui = document.getElementById('ui-layer');
+            
+            // UI Transition
+            gsap.to(prompt, { opacity: 0, duration: 1, onComplete: () => prompt.style.display = 'none' });
+            gsap.to(ui, { opacity: 1, duration: 2 });
+            
+            // Audio Start
+            // Simple oscillator drone
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 110; // A2
+            gain.gain.value = 0.0;
+            osc.start();
+            gsap.to(gain.gain, { value: 0.2, duration: 5 }); // Fade in drone
+            
+            // TIMELINE
+            const tl = gsap.timeline();
+
+            // 0-5s: Build anticipation (Beauty phase continues)
+            // No action needed, loop handles it.
+
+            // 5s: SHATTER TRIGGER
+            tl.to({}, { duration: 5 }); 
+            
+            tl.call(() => {
+                console.log("PHASE: EXPLODE");
+                state.phase = 'explode';
+                heroGroup.visible = false;
+                fragments.visible = true;
+                
+                // Audio Impact
+                const impactOsc = ctx.createOscillator();
+                const impactGain = ctx.createGain();
+                impactOsc.connect(impactGain);
+                impactGain.connect(ctx.destination);
+                impactOsc.frequency.setValueAtTime(200, ctx.currentTime);
+                impactOsc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.5);
+                impactGain.gain.setValueAtTime(0.5, ctx.currentTime);
+                impactGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.0);
+                impactOsc.start();
+                impactOsc.stop(ctx.currentTime + 1.0);
+                
+                // Screen Shake / Aberration
+                gsap.fromTo(finalPass.uniforms.aberration, { value: 0.05 }, { value: 0.002, duration: 1.5, ease: "power2.out" });
+                
+                // Camera Pull
+                gsap.to(camera.position, { z: 12, duration: 2, ease: "power2.out" });
+            });
+
+            // 5s-10s: EXPLOSION (0 -> 0.5)
+            tl.to(state, {
+                explosionProgress: 0.5,
+                duration: 4,
+                ease: "power2.out"
+            });
+            
+            // 10s-15s: SUSPENSION (Hold 0.5)
+            tl.to({}, { duration: 5, onStart: () => {
+                console.log("PHASE: SUSPEND");
+                state.phase = 'suspend';
+                gsap.to(camera.position, { x: 4, z: 10, duration: 10, ease: "none" }); // Slow orbit
+            }});
+
+            // 15s-23s: REBIRTH (0.5 -> 1.0)
+            tl.to(state, {
+                explosionProgress: 1.0,
+                duration: 8,
+                ease: "power2.inOut",
+                onStart: () => {
+                    console.log("PHASE: REFORM");
+                    state.phase = 'reform';
+                    
+                    // Audio Swell
+                    const swellOsc = ctx.createOscillator();
+                    const swellGain = ctx.createGain();
+                    swellOsc.type = 'triangle';
+                    swellOsc.connect(swellGain);
+                    swellGain.connect(ctx.destination);
+                    swellOsc.frequency.setValueAtTime(110, ctx.currentTime);
+                    swellOsc.frequency.linearRampToValueAtTime(440, ctx.currentTime + 8); // Rise
+                    swellGain.gain.value = 0.05;
+                    swellOsc.start();
+                    swellOsc.stop(ctx.currentTime + 8);
+                    
+                    gsap.to(camera.position, { x: 0, y: 0, z: 6, duration: 8, ease: "power1.inOut" });
+                }
+            });
+
+            // 23s: TITLE
+            tl.call(() => {
+                if(titleMesh) {
+                    titleMesh.visible = true;
+                    gsap.to(titleMesh.material, { opacity: 1, duration: 2 });
+                    gsap.from(titleMesh.position, { z: -5, duration: 3, ease: "power2.out" });
+                }
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // INPUT
+        // ------------------------------------------------------------------
+        window.addEventListener('click', () => {
+            if (!state.started) startSequence();
+        });
+
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            composer.setSize(width, height);
+        });
+
+        // Start loop immediately, but sequence waits for click
+        animate();
+
+    </script>
+</body>
+</html>
