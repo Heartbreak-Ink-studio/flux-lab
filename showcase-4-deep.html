@@ -1,0 +1,818 @@
+<!-- 
+    HEARTBREAK INK — SHOWCASE #4: "DEEP"
+    "The Abyss Stares Back"
+    
+    Concept: An uninterrupted descent from surface light to the crushing dark.
+    Bioluminescence, organic motion, and a singular geometric anomaly.
+    
+    Authored by: Flux ⚡
+    Date: 2026-02-26
+    
+    TECHNICAL STACK:
+    1. Volumetric God Rays (Custom Shader)
+    2. Caustic Light Projection (Animated Texture)
+    3. GPU Particle Systems (Marine Snow)
+    4. Procedural Jellyfish (Sine-wave vertex displacement)
+    5. Depth-based Audio Synthesis (Web Audio API)
+    6. Heartbreak Post-Process (Bloom + Grain + Chromatic Aberration)
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HBI Showcase #4: DEEP</title>
+    <style>
+        /* BASE RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #000205; 
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            cursor: none; /* Hide cursor for immersion */
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 3rem;
+            color: rgba(255, 255, 255, 0.8);
+            mix-blend-mode: difference;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.7rem;
+            font-weight: 700;
+            opacity: 0; /* Fade in later */
+        }
+
+        .depth-meter {
+            position: fixed;
+            right: 3rem;
+            top: 50%;
+            transform: translateY(-50%);
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            letter-spacing: 0.2em;
+            opacity: 0.5;
+            border-right: 1px solid rgba(255,255,255,0.3);
+            padding-right: 1rem;
+        }
+
+        .title-card {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            opacity: 0;
+            z-index: 20;
+        }
+
+        .title-card h1 {
+            font-size: 5rem;
+            font-weight: 300;
+            letter-spacing: 0.5em;
+            color: white;
+            margin-bottom: 1rem;
+            text-shadow: 0 0 20px rgba(100, 200, 255, 0.5);
+        }
+        
+        .title-card p {
+            font-size: 0.9rem;
+            letter-spacing: 0.3em;
+            color: #88ccff;
+            text-transform: uppercase;
+        }
+
+        #start-btn {
+            position: fixed;
+            bottom: 3rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 1rem 2rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.8rem;
+            cursor: pointer;
+            z-index: 50;
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+
+        #start-btn:hover {
+            background: white;
+            color: black;
+            border-color: white;
+        }
+        
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Scanlines */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            z-index: 5;
+            pointer-events: none;
+            opacity: 0.3;
+        }
+    </style>
+
+    <!-- IMPORT MAP -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- UI -->
+    <div id="ui-layer">
+        <div class="header" id="ui-header">
+            <span>Project: DEEP</span>
+            <span>Est. Depth: <span id="depth-val">0</span>m</span>
+        </div>
+        <div class="depth-meter">
+            <span id="depth-marker">SURFACE LEVEL</span>
+        </div>
+    </div>
+
+    <div class="scanlines"></div>
+
+    <div class="title-card" id="end-title">
+        <p>Showcase #4</p>
+        <h1>HEARTBREAK</h1>
+    </div>
+
+    <button id="start-btn">Initiate Descent</button>
+
+    <!-- 3D CONTAINER -->
+    <div id="canvas-container"></div>
+
+    <!-- MAIN SCRIPT -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+        import gsap from 'gsap';
+
+        // ------------------------------------------------------------------
+        // CONFIG
+        // ------------------------------------------------------------------
+        const CONFIG = {
+            duration: 45, // Seconds for descent
+            depth: -120,   // Target depth
+            colors: {
+                surface: new THREE.Color(0x004455),
+                deep: new THREE.Color(0x000205),
+                godray: new THREE.Color(0x88ccff),
+                bio1: new THREE.Color(0x00ffaa),
+                bio2: new THREE.Color(0xff0055)
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // AUDIO SYSTEM (Procedural Synthesis)
+        // ------------------------------------------------------------------
+        const AudioSys = {
+            ctx: null,
+            master: null,
+            droneOsc: null,
+            droneFilter: null,
+            
+            init: function() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                this.master = this.ctx.createGain();
+                this.master.gain.value = 0.5;
+                this.master.connect(this.ctx.destination);
+
+                // 1. Deep Pressure Drone (Brownian noise approx via low oscs)
+                this.droneOsc = this.ctx.createOscillator();
+                this.droneOsc.type = 'sawtooth';
+                this.droneOsc.frequency.value = 40; // Deep rumble
+                
+                this.droneFilter = this.ctx.createBiquadFilter();
+                this.droneFilter.type = 'lowpass';
+                this.droneFilter.frequency.value = 100; // Start muffled
+                
+                this.droneOsc.connect(this.droneFilter);
+                this.droneFilter.connect(this.master);
+                this.droneOsc.start();
+
+                // 2. High Ethereal Shimmer (Sine cluster)
+                this.createShimmer();
+            },
+
+            createShimmer: function() {
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 800;
+                const gain = this.ctx.createGain();
+                gain.gain.value = 0.05;
+                
+                osc.connect(gain);
+                gain.connect(this.master);
+                osc.start();
+                
+                // Slight detune wobble
+                gsap.to(osc.frequency, {
+                    value: 810,
+                    duration: 4,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: "sine.inOut"
+                });
+            },
+
+            triggerPing: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1200 + Math.random() * 500, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 1.0);
+                
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 2.0);
+                
+                // Reverb sim (simple delay)
+                const delay = this.ctx.createDelay();
+                delay.delayTime.value = 0.4;
+                const fb = this.ctx.createGain();
+                fb.gain.value = 0.4;
+                
+                osc.connect(gain);
+                gain.connect(this.master);
+                gain.connect(delay);
+                delay.connect(fb);
+                fb.connect(delay);
+                delay.connect(this.master);
+                
+                osc.start();
+                osc.stop(this.ctx.currentTime + 3.0);
+            },
+
+            updateDepth: function(normalizedDepth) {
+                // normalizedDepth: 0 (surface) to 1 (bottom)
+                if (!this.ctx) return;
+                
+                // Drone gets deeper and louder
+                this.droneOsc.frequency.rampToValueAtTime(40 - (normalizedDepth * 20), this.ctx.currentTime + 0.1);
+                this.droneFilter.frequency.rampToValueAtTime(100 + (normalizedDepth * 200), this.ctx.currentTime + 0.1); // Open up slightly to hear grit
+                
+                // Occasional pings increase with depth
+                if (Math.random() < (0.005 + normalizedDepth * 0.02)) {
+                    this.triggerPing();
+                }
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // SETUP
+        // ------------------------------------------------------------------
+        const container = document.getElementById('canvas-container');
+        
+        // Scene
+        const scene = new THREE.Scene();
+        scene.background = CONFIG.colors.surface;
+        scene.fog = new THREE.FogExp2(CONFIG.colors.surface, 0.02);
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+        camera.position.set(0, 0, 0); // Start at surface
+        camera.rotation.x = -Math.PI / 2; // Look down
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        container.appendChild(renderer.domElement);
+
+        // ------------------------------------------------------------------
+        // SHADERS & MATERIALS
+        // ------------------------------------------------------------------
+
+        // 1. GOD RAYS (Volumetric Cone)
+        const godRayGeo = new THREE.CylinderGeometry(5, 20, 100, 32, 1, true);
+        godRayGeo.translate(0, -50, 0); // Pivot at top
+        
+        const godRayShader = {
+            uniforms: {
+                time: { value: 0 },
+                color: { value: new THREE.Color(0x88ccff) }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vPos;
+                void main() {
+                    vUv = uv;
+                    vPos = position;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 color;
+                varying vec2 vUv;
+                
+                // Simplex noise (simplified)
+                float noise(vec2 st) {
+                    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+                }
+
+                void main() {
+                    // Moving noise pattern for rays
+                    float ray = sin(vUv.x * 20.0 + time * 0.5) * 0.5 + 0.5;
+                    ray *= sin(vUv.x * 10.0 - time * 0.2) * 0.5 + 0.5;
+                    
+                    // Fade out at bottom
+                    float alpha = smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.5, vUv.y);
+                    
+                    // Caustic flicker
+                    float flicker = 0.8 + 0.2 * sin(time * 2.0);
+                    
+                    gl_FragColor = vec4(color, alpha * ray * 0.15 * flicker);
+                }
+            `
+        };
+        const godRayMat = new THREE.ShaderMaterial({
+            uniforms: godRayShader.uniforms,
+            vertexShader: godRayShader.vertexShader,
+            fragmentShader: godRayShader.fragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const godRays = new THREE.Mesh(godRayGeo, godRayMat);
+        scene.add(godRays);
+
+
+        // 2. JELLYFISH (Procedural)
+        function createJellyfish(color, scale, pos) {
+            const group = new THREE.Group();
+            group.position.copy(pos);
+            
+            // Bell
+            const bellGeo = new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            
+            const bioShader = {
+                uniforms: {
+                    time: { value: 0 },
+                    color: { value: new THREE.Color(color) }
+                },
+                vertexShader: `
+                    uniform float time;
+                    varying vec2 vUv;
+                    varying vec3 vNormal;
+                    
+                    void main() {
+                        vUv = uv;
+                        vNormal = normal;
+                        vec3 pos = position;
+                        
+                        // Pulsing motion
+                        float pulse = sin(time * 3.0 - pos.y * 2.0) * 0.1;
+                        pos += normal * pulse;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 color;
+                    varying vec3 vNormal;
+                    
+                    void main() {
+                        // Fresnel glow
+                        float fresnel = pow(1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+                        gl_FragColor = vec4(color, 0.2 + fresnel * 0.8);
+                    }
+                `
+            };
+            
+            const bellMat = new THREE.ShaderMaterial({
+                uniforms: JSON.parse(JSON.stringify(bioShader.uniforms)), // Clone uniforms
+                vertexShader: bioShader.vertexShader,
+                fragmentShader: bioShader.fragmentShader,
+                transparent: true,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const bell = new THREE.Mesh(bellGeo, bellMat);
+            group.add(bell);
+            
+            // Tentacles (Points)
+            const tentacleCount = 8;
+            const segs = 20;
+            const pts = [];
+            
+            for(let t=0; t<tentacleCount; t++) {
+                const angle = (t / tentacleCount) * Math.PI * 2;
+                const r = 0.5;
+                const ox = Math.cos(angle) * r;
+                const oz = Math.sin(angle) * r;
+                
+                for(let i=0; i<segs; i++) {
+                    pts.push(ox, -i * 0.3, oz);
+                }
+            }
+            
+            const tentacleGeo = new THREE.BufferGeometry();
+            tentacleGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+            
+            // Store original positions for animation
+            tentacleGeo.userData = { original: pts };
+
+            const tentacleMat = new THREE.PointsMaterial({
+                color: color,
+                size: 0.1,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const tentacles = new THREE.Points(tentacleGeo, tentacleMat);
+            group.add(tentacles);
+            
+            group.scale.setScalar(scale);
+            
+            // Custom animate method attached to object
+            group.userData = {
+                speed: 0.5 + Math.random() * 0.5,
+                offset: Math.random() * 100,
+                update: (t) => {
+                    bellMat.uniforms.time.value = t + group.userData.offset;
+                    
+                    // Animate tentacles
+                    const posAttr = tentacleGeo.attributes.position;
+                    const orig = tentacleGeo.userData.original;
+                    
+                    for(let i=0; i < posAttr.count; i++) {
+                        const y = orig[i*3 + 1];
+                        // Wave motion based on depth (y) and time
+                        const wave = Math.sin(t * 2.0 + y * 0.5 + group.userData.offset) * 0.2 * (-y * 0.5); // More wave at bottom
+                        
+                        posAttr.setX(i, orig[i*3] + wave);
+                        posAttr.setZ(i, orig[i*3+2] + Math.cos(t * 1.5 + y)*0.1);
+                    }
+                    posAttr.needsUpdate = true;
+                    
+                    // Float up slightly
+                    group.position.y += Math.sin(t * 0.5 + group.userData.offset) * 0.005;
+                }
+            };
+            
+            return group;
+        }
+        
+        const creatures = [];
+        // Spawn creatures at various depths
+        for(let i=0; i<15; i++) {
+            const depth = -10 - Math.random() * 80; // Between -10 and -90
+            const col = Math.random() > 0.5 ? CONFIG.colors.bio1 : CONFIG.colors.bio2;
+            const jelly = createJellyfish(col, 0.5 + Math.random() * 1.0, new THREE.Vector3(
+                (Math.random()-0.5) * 20,
+                depth,
+                (Math.random()-0.5) * 20
+            ));
+            scene.add(jelly);
+            creatures.push(jelly);
+        }
+
+        // 3. MARINE SNOW (Particles)
+        const snowGeo = new THREE.BufferGeometry();
+        const snowCount = 2000;
+        const snowPos = [];
+        const snowSpeed = [];
+        
+        for(let i=0; i<snowCount; i++) {
+            snowPos.push(
+                (Math.random()-0.5) * 60,
+                (Math.random()) * -130, // Full depth range
+                (Math.random()-0.5) * 60
+            );
+            snowSpeed.push(0.02 + Math.random() * 0.05);
+        }
+        
+        snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
+        const snowMat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.15,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+        });
+        const snowSystem = new THREE.Points(snowGeo, snowMat);
+        scene.add(snowSystem);
+
+
+        // 4. THE ARTIFACT (Wild Card: Geometric Anomaly)
+        // A perfect Icosahedron at the bottom, glowing intensely.
+        const artifactGroup = new THREE.Group();
+        artifactGroup.position.set(0, CONFIG.depth, 0);
+        
+        // Inner core
+        const coreGeo = new THREE.IcosahedronGeometry(2, 0);
+        const coreMat = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff, 
+            wireframe: true,
+            transparent: true,
+            opacity: 0.5
+        });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        artifactGroup.add(core);
+        
+        // Outer shell (Fresnel shader)
+        const shellGeo = new THREE.IcosahedronGeometry(2.5, 1);
+        const shellShader = {
+            uniforms: { time: { value: 0 } },
+            vertexShader: `
+                varying vec3 vNormal;
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vNormal;
+                uniform float time;
+                void main() {
+                    float fresnel = pow(1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+                    // Pulsing color shift
+                    vec3 col = mix(vec3(0.0, 0.5, 1.0), vec3(1.0, 0.0, 0.5), sin(time)*0.5+0.5);
+                    gl_FragColor = vec4(col, fresnel * 0.8);
+                }
+            `
+        };
+        const shellMat = new THREE.ShaderMaterial({
+            uniforms: shellShader.uniforms,
+            vertexShader: shellShader.vertexShader,
+            fragmentShader: shellShader.fragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const shell = new THREE.Mesh(shellGeo, shellMat);
+        artifactGroup.add(shell);
+        
+        // Floor Grid (Tron-like at bottom)
+        const gridHelper = new THREE.GridHelper(100, 50, 0x004455, 0x001122);
+        gridHelper.position.set(0, CONFIG.depth - 2, 0);
+        scene.add(gridHelper);
+        
+        scene.add(artifactGroup);
+
+        // ------------------------------------------------------------------
+        // POST PROCESSING
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        
+        // Bloom
+        const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.1);
+        composer.addPass(bloom);
+
+        // Custom Heartbreak Post (Grain + Vignette + Grade)
+        const postShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                time: { value: 0 },
+                aberration: { value: 0.003 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float aberration;
+                varying vec2 vUv;
+                
+                float random(vec2 p) {
+                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    // CA
+                    float r = texture2D(tDiffuse, vUv + vec2(aberration, 0.0)).r;
+                    float g = texture2D(tDiffuse, vUv).g;
+                    float b = texture2D(tDiffuse, vUv - vec2(aberration, 0.0)).b;
+                    vec3 color = vec3(r, g, b);
+                    
+                    // Grain
+                    float noise = (random(vUv * time) - 0.5) * 0.1;
+                    color += noise;
+                    
+                    // Vignette
+                    float dist = distance(vUv, vec2(0.5));
+                    color *= smoothstep(0.8, 0.2, dist);
+                    
+                    // Deep Blue Grade
+                    color.b *= 1.1;
+                    
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        };
+        const postPass = new ShaderPass(postShader);
+        composer.addPass(postPass);
+        
+        const smaa = new SMAAPass(window.innerWidth, window.innerHeight);
+        composer.addPass(smaa);
+
+        // ------------------------------------------------------------------
+        // ANIMATION LOOP
+        // ------------------------------------------------------------------
+        const clock = new THREE.Clock();
+        
+        // Animation State
+        let isDescending = false;
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            
+            // 1. Uniforms
+            godRayMat.uniforms.time.value = time;
+            shellMat.uniforms.time.value = time;
+            postPass.uniforms.time.value = time;
+            
+            // 2. Creature Logic
+            creatures.forEach(c => c.userData.update(time));
+            
+            // 3. Artifact Rotation
+            artifactGroup.rotation.x = time * 0.2;
+            artifactGroup.rotation.y = time * 0.3;
+            
+            // 4. Snow Fall
+            const positions = snowGeo.attributes.position.array;
+            for(let i=0; i<snowCount; i++) {
+                // If descending, move particles relative to camera for "infinite" feel
+                // Or just loop them in world space
+                let y = positions[i*3 + 1];
+                
+                // Parallax effect: slower near bottom? No, constant speed is fine for snow.
+                y -= 0.05; 
+                
+                // Wrap around camera to fake infinite depth
+                if (camera.position.y < y - 50) {
+                    y = camera.position.y - 50; 
+                } else if (y < camera.position.y - 50) {
+                    y = camera.position.y + 50;
+                }
+                
+                // Basic loop if not tracking camera directly (failsafe)
+                if (y < -150) y = 10;
+                
+                positions[i*3 + 1] = y;
+            }
+            snowGeo.attributes.position.needsUpdate = true;
+            
+            // 5. Update UI Depth
+            if(isDescending) {
+                const depth = Math.abs(Math.round(camera.position.y));
+                document.getElementById('depth-val').innerText = depth;
+                
+                // Color grading based on depth
+                const progress = Math.min(Math.abs(camera.position.y) / Math.abs(CONFIG.depth), 1);
+                
+                // Audio update
+                AudioSys.updateDepth(progress);
+                
+                // Fog color shift: Blue/Teal -> Pitch Black
+                const targetColor = CONFIG.colors.surface.clone().lerp(CONFIG.colors.deep, progress);
+                scene.background = targetColor;
+                scene.fog.color = targetColor;
+                scene.fog.density = 0.02 + progress * 0.05; // Fog gets thicker
+                
+                godRays.material.opacity = 1.0 - progress; // Rays fade out
+            }
+
+            composer.render();
+        }
+
+        // ------------------------------------------------------------------
+        // SEQUENCER
+        // ------------------------------------------------------------------
+        document.getElementById('start-btn').addEventListener('click', () => {
+            // Hide button
+            gsap.to('#start-btn', { opacity: 0, pointerEvents: 'none' });
+            gsap.to('.header', { opacity: 1, duration: 2 });
+            
+            // Init Audio
+            AudioSys.init();
+            
+            isDescending = true;
+            
+            // Camera Path Timeline
+            const tl = gsap.timeline();
+            
+            // 1. Descent
+            tl.to(camera.position, {
+                y: CONFIG.depth + 10, // Stop just above artifact
+                duration: CONFIG.duration,
+                ease: "power1.inOut"
+            }, 0);
+            
+            // 2. Camera sway/drift
+            tl.to(camera.rotation, {
+                z: 0.1,
+                duration: CONFIG.duration * 0.5,
+                yoyo: true,
+                repeat: 1,
+                ease: "sine.inOut"
+            }, 0);
+            
+            // 3. Look at artifact at end
+            tl.to(camera.rotation, {
+                x: 0, // Level out
+                duration: 5,
+                ease: "power2.inOut"
+            }, CONFIG.duration - 5);
+            
+            // 4. Final reveal
+            tl.add(() => {
+                gsap.to('#end-title', { opacity: 1, duration: 4 });
+                // Fade to black
+                gsap.to(postPass.uniforms.aberration, { value: 0.05, duration: 2 }); // Glitch out
+                gsap.to('#canvas-container', { opacity: 0, duration: 4, delay: 3 });
+            }, CONFIG.duration - 2);
+        });
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+
+    </script>
+</body>
+</html>
