@@ -1,0 +1,682 @@
+<!-- 
+    HEARTBREAK INK — SHOWCASE #3: "FRACTURE"
+    Concept: Destruction and Reformation.
+    
+    Authored by: Flux ⚡
+    Date: 2026-02-26
+    
+    TECH STACK:
+    - Three.js r160 (InstancedMesh for particles)
+    - Custom Verlet Integration for physics
+    - GSAP: Timeline management
+    - Web Audio: Procedural sound synthesis
+    
+    THEMATIC ARC:
+    0s - 10s: THE IDOL. Pristine, rotating, worship-worthy.
+    10s - 12s: THE BREAK. Violent outward explosion.
+    12s - 20s: THE VOID. Suspension. Rotation. Drifting.
+    20s - 30s: THE REFORM. Converging into a new, complex crystal structure.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FRACTURE — Heartbreak Ink</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background-color: #020202; overflow: hidden; font-family: 'Helvetica Neue', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: fixed; z-index: 1; }
+        
+        /* UI OVERLAY */
+        #ui-layer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none; display: flex; flex-direction: column;
+            justify-content: space-between; padding: 2rem; color: #fff;
+            mix-blend-mode: difference;
+        }
+        .header { display: flex; justify-content: space-between; font-weight: 700; letter-spacing: 0.15em; font-size: 0.8rem; text-transform: uppercase; }
+        .footer { display: flex; justify-content: space-between; align-items: flex-end; }
+        .title-block h1 { font-size: 5rem; line-height: 0.85; font-weight: 800; letter-spacing: -0.04em; margin: 0; text-transform: uppercase; }
+        .status { text-align: right; font-size: 0.7rem; opacity: 0.7; letter-spacing: 0.1em; line-height: 1.4; text-transform: uppercase; }
+        
+        #start-btn {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: transparent; border: 1px solid rgba(255,255,255,0.3); color: white;
+            padding: 1rem 2rem; font-size: 0.8rem; letter-spacing: 0.2em; cursor: pointer;
+            z-index: 50; transition: all 0.3s; pointer-events: auto;
+            text-transform: uppercase;
+        }
+        #start-btn:hover { background: white; color: black; border-color: white; }
+        
+        /* FADE OVERLAY */
+        #fade-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; z-index: 20; pointer-events: none;
+        }
+    </style>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <div id="fade-overlay"></div>
+    <button id="start-btn">INITIATE FRACTURE</button>
+
+    <div id="ui-layer">
+        <div class="header">
+            <span>HEARTBREAK INK</span>
+            <span id="time-code">00:00:00</span>
+        </div>
+        <div class="footer">
+            <div class="title-block">
+                <h1 id="main-title">THE IDOL</h1>
+            </div>
+            <div class="status">
+                SHOWCASE #3<br>
+                DESTRUCTION // REFORMATION<br>
+                FLUX ENGINE v1.0
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+        import gsap from 'gsap';
+
+        // ------------------------------------------------------------------
+        // CONFIG
+        // ------------------------------------------------------------------
+        const CONFIG = {
+            duration: 35, // Full loop duration
+            shatterTime: 10,
+            restartTime: 20,
+            particleCount: 4000, // Number of shards - pushed higher for effect
+            bloom: { threshold: 0.1, strength: 0.4, radius: 0.6 },
+            colors: {
+                bg: 0x020202,
+                object: 0xffffff,
+                accent: 0xff3333 // Heartbreak red for core
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // STATE
+        // ------------------------------------------------------------------
+        let state = {
+            time: 0,
+            phase: 'IDOL', // IDOL, SHATTER, SUSPEND, REFORM
+            started: false,
+            audioCtx: null
+        };
+
+        // ------------------------------------------------------------------
+        // SETUP
+        // ------------------------------------------------------------------
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(CONFIG.colors.bg);
+        scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 10);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false, depth: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 15;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 2.0;
+
+        // ------------------------------------------------------------------
+        // LIGHTING
+        // ------------------------------------------------------------------
+        // Environment
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        const roomEnv = new THREE.RoomEnvironment(); // Built-in studio setup from Three? No, let's build procedural.
+        // Simple manual lights for control first
+        
+        const ambientLight = new THREE.AmbientLight(0x222222);
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.SpotLight(0xffffff, 800);
+        mainLight.position.set(5, 8, 5);
+        mainLight.angle = Math.PI / 6;
+        mainLight.penumbra = 0.5;
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.set(2048, 2048);
+        mainLight.shadow.bias = -0.0001;
+        scene.add(mainLight);
+
+        const rimLight = new THREE.SpotLight(0x4444ff, 500); // Cool rim
+        rimLight.position.set(-5, 2, -5);
+        rimLight.lookAt(0, 0, 0);
+        scene.add(rimLight);
+        
+        const fillLight = new THREE.PointLight(0xffaa88, 200); // Warm fill
+        fillLight.position.set(-5, 0, 5);
+        scene.add(fillLight);
+
+        // ------------------------------------------------------------------
+        // OBJECTS
+        // ------------------------------------------------------------------
+        
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            metalness: 0.1,
+            roughness: 0.15,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1,
+            side: THREE.DoubleSide
+        });
+
+        // Use InstancedMesh for shards
+        // Each instance is a small tetrahedron or shard.
+        const shardGeo = new THREE.TetrahedronGeometry(0.04, 0); // Very small sharp shards
+        const instancedMesh = new THREE.InstancedMesh(shardGeo, material, CONFIG.particleCount);
+        instancedMesh.castShadow = true;
+        instancedMesh.receiveShadow = true;
+        instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(instancedMesh);
+
+        // Data arrays for animation
+        const dummy = new THREE.Object3D();
+        const pOriginal = new Float32Array(CONFIG.particleCount * 3);
+        const pTarget = new Float32Array(CONFIG.particleCount * 3);
+        const vExplode = new Float32Array(CONFIG.particleCount * 3);
+        const rotSpeed = new Float32Array(CONFIG.particleCount * 3);
+        const randomOffsets = new Float32Array(CONFIG.particleCount);
+
+        // SHAPE GENERATION
+        // Function to get a point in a "Bust" shape (Idol)
+        function getPointInBust() {
+            // Rejection sampling for a composite "Head" shape
+            // 1. Head (Ovoid)
+            // 2. Neck (Cylinder)
+            // 3. Shoulders (Box)
+            
+            while(true) {
+                // Generate random point in bounding box
+                let x = (Math.random()-0.5) * 3;
+                let y = (Math.random()-0.5) * 4;
+                let z = (Math.random()-0.5) * 3;
+                
+                // Head sphere: center (0, 0.8, 0), radius 0.9
+                let dx = x; let dy = y - 0.8; let dz = z;
+                if (dx*dx + dy*dy*0.8 + dz*dz < 0.9*0.9) return new THREE.Vector3(x, y, z);
+                
+                // Neck cylinder: center (0, -0.4, 0), radius 0.35, height 0.8
+                if (x*x + z*z < 0.35*0.35 && y > -0.8 && y < 0.0) return new THREE.Vector3(x, y, z);
+                
+                // Shoulders box: center (0, -1.0, 0), width 2.2, height 0.6, depth 0.8
+                if (Math.abs(x) < 1.1 && Math.abs(y - -1.0) < 0.3 && Math.abs(z) < 0.4) return new THREE.Vector3(x, y, z);
+                
+                // Pedestal base
+                if (Math.abs(x) < 0.4 && Math.abs(y - -1.5) < 0.2 && Math.abs(z) < 0.4) return new THREE.Vector3(x, y, z);
+            }
+        }
+
+        // Function to get a point in "Crystal" shape (Reform)
+        // Abstract, sharp, floating, mathematical structure
+        function getPointInCrystal() {
+             // A double helix or large floating ring structure
+             // Let's do a large Mobius strip-like cloud
+             
+             const t = Math.random() * Math.PI * 2; // angle
+             const u = (Math.random() - 0.5) * 2.0; // width
+             
+             // Torus knot variant?
+             // x = (R + r * cos(phi)) * cos(theta)
+             const p = 3; const q = 2;
+             const r = 0.5 + Math.random()*0.5; // thickness
+             
+             const phi = t * q;
+             const theta = t * p;
+             
+             const x = (2.0 + r * Math.cos(phi)) * Math.cos(theta);
+             const y = (2.0 + r * Math.cos(phi)) * Math.sin(theta);
+             const z = r * Math.sin(phi);
+             
+             // Rotate it to be more interesting
+             const v = new THREE.Vector3(x, y, z);
+             v.applyAxisAngle(new THREE.Vector3(1,0,0), Math.PI/2);
+             v.multiplyScalar(0.8);
+             return v;
+        }
+
+        // Initialize Particles
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            // 1. Original Position (The Idol)
+            const p1 = getPointInBust();
+            pOriginal[i*3] = p1.x;
+            pOriginal[i*3+1] = p1.y;
+            pOriginal[i*3+2] = p1.z;
+
+            // 2. Target Position (The Crystal)
+            const p2 = getPointInCrystal();
+            pTarget[i*3] = p2.x;
+            pTarget[i*3+1] = p2.y;
+            pTarget[i*3+2] = p2.z;
+
+            // 3. Velocities (Explosion vector)
+            // Radial explosion + some upward drift
+            const center = new THREE.Vector3(0, 0, 0);
+            const dir = new THREE.Vector3().copy(p1).sub(center).normalize();
+            const speed = 3.0 + Math.random() * 4.0; 
+            
+            // Add some noise to direction
+            dir.x += (Math.random()-0.5)*0.5;
+            dir.y += (Math.random()-0.5)*0.5;
+            dir.z += (Math.random()-0.5)*0.5;
+            dir.normalize();
+
+            vExplode[i*3] = dir.x * speed;
+            vExplode[i*3+1] = dir.y * speed;
+            vExplode[i*3+2] = dir.z * speed;
+
+            // 4. Rotation Speeds
+            rotSpeed[i*3] = (Math.random() - 0.5) * 10;
+            
+            randomOffsets[i] = Math.random();
+
+            // Initial placement
+            dummy.position.copy(p1);
+            dummy.scale.setScalar(0); // Start hidden, scale up in anim
+            dummy.updateMatrix();
+            instancedMesh.setMatrixAt(i, dummy.matrix);
+        }
+        instancedMesh.instanceMatrix.needsUpdate = true;
+
+        // Simulation Vars
+        let factors = {
+            shatter: 0,
+            reform: 0,
+            noise: 0
+        };
+
+        // ------------------------------------------------------------------
+        // AUDIO SYSTEM (Procedural)
+        // ------------------------------------------------------------------
+        const audio = {
+            ctx: null,
+            master: null,
+            shatterGain: null,
+            reformGain: null,
+            init: function() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                this.master = this.ctx.createGain();
+                this.master.gain.value = 0.4;
+                this.master.connect(this.ctx.destination);
+
+                this.shatterGain = this.ctx.createGain();
+                this.shatterGain.connect(this.master);
+                
+                this.reformGain = this.ctx.createGain();
+                this.reformGain.connect(this.master);
+                
+                this.startDrone();
+            },
+            startDrone: function() {
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 60;
+                
+                const gain = this.ctx.createGain();
+                gain.gain.value = 0.1;
+                
+                osc.connect(gain);
+                gain.connect(this.master);
+                osc.start();
+                
+                // Add some higher harmony
+                const osc2 = this.ctx.createOscillator();
+                osc2.type = 'triangle';
+                osc2.frequency.value = 90; // Fifth
+                const gain2 = this.ctx.createGain();
+                gain2.gain.value = 0.05;
+                osc2.connect(gain2);
+                gain2.connect(this.master);
+                osc2.start();
+            },
+            triggerShatter: function() {
+                const t = this.ctx.currentTime;
+                
+                // Noise burst (Glass break)
+                const bufferSize = this.ctx.sampleRate * 2;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.1)); // Decay fast
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                
+                // High pass filter for glass sound
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 2000;
+                
+                noise.connect(filter);
+                filter.connect(this.shatterGain);
+                noise.start();
+                
+                // Deep impact
+                const osc = this.ctx.createOscillator();
+                osc.frequency.setValueAtTime(100, t);
+                osc.frequency.exponentialRampToValueAtTime(10, t + 1);
+                const subGain = this.ctx.createGain();
+                subGain.gain.setValueAtTime(1, t);
+                subGain.gain.exponentialRampToValueAtTime(0.01, t + 1);
+                
+                osc.connect(subGain);
+                subGain.connect(this.shatterGain);
+                osc.start();
+                osc.stop(t + 1);
+            },
+            triggerReform: function() {
+                const t = this.ctx.currentTime;
+                // Arpeggio
+                const scale = [261.63, 311.13, 392.00, 466.16, 523.25]; // C Minor Pentatonic
+                
+                for(let i=0; i<10; i++) {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.value = scale[i % scale.length] * (1 + Math.floor(i/5));
+                    
+                    const gain = this.ctx.createGain();
+                    gain.gain.setValueAtTime(0, t + i*0.2);
+                    gain.gain.linearRampToValueAtTime(0.1, t + i*0.2 + 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + i*0.2 + 2.0);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.reformGain);
+                    osc.start();
+                    osc.stop(t + i*0.2 + 3.0);
+                }
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // POST PROCESSING
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        
+        const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloom.strength = CONFIG.bloom.strength;
+        bloom.radius = CONFIG.bloom.radius;
+        bloom.threshold = CONFIG.bloom.threshold;
+        composer.addPass(bloom);
+        
+        // Custom Grain + Vignette + Grade
+        const finalShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                time: { value: 0 },
+                amount: { value: 0.002 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float amount;
+                varying vec2 vUv;
+                
+                float random(vec2 p) { return fract(cos(dot(p, vec2(23.14, 2.66))) * 12345.6789); }
+                
+                void main() {
+                    vec4 color = texture2D(tDiffuse, vUv);
+                    
+                    // Grain
+                    float noise = (random(vUv * time) - 0.5) * 0.05;
+                    color.rgb += noise;
+                    
+                    // Vignette
+                    float dist = distance(vUv, vec2(0.5));
+                    color.rgb *= smoothstep(0.8, 0.2, dist);
+                    
+                    // Chromatic Aberration at edges
+                    float r = texture2D(tDiffuse, vUv + vec2(amount * dist, 0.0)).r;
+                    float b = texture2D(tDiffuse, vUv - vec2(amount * dist, 0.0)).b;
+                    color.r = r;
+                    color.b = b;
+
+                    // Color Grade (Cinematic Teal push in shadows)
+                    color.rgb = mix(color.rgb, vec3(0.0, 0.02, 0.05), 0.1);
+
+                    gl_FragColor = color;
+                }
+            `
+        };
+        const finalPass = new ShaderPass(finalShader);
+        composer.addPass(finalPass);
+
+        // ------------------------------------------------------------------
+        // ANIMATION TIMELINE
+        // ------------------------------------------------------------------
+        function startTimeline() {
+            const tl = gsap.timeline();
+            
+            // 0s: Scale in IDOL
+            tl.to(dummy.scale, { duration: 2, ease: "power2.out", onUpdate: () => {
+                // Manually handle scale-in if needed, but we rely on factors
+            }});
+            
+            // 5s: SHATTER
+            tl.to(factors, { 
+                shatter: 1.0, 
+                duration: 4.0, 
+                ease: "power2.out",
+                delay: 4.0,
+                onStart: () => {
+                    state.phase = 'SHATTER';
+                    document.getElementById('main-title').innerText = "FRACTURE";
+                    document.getElementById('main-title').style.color = '#ff4444';
+                    if(audio.ctx) audio.triggerShatter();
+                    
+                    // Camera punch
+                    gsap.to(camera.position, { z: 14, duration: 0.5, yoyo: true, repeat: 1 });
+                    
+                    // Material change to darker/rougher?
+                    material.color.setHex(0xaaaaaa);
+                    material.roughness = 0.5;
+                }
+            });
+            
+            // 12s: REFORM
+            tl.to(factors, {
+                reform: 1.0,
+                duration: 6.0,
+                ease: "power2.inOut",
+                delay: 2.0, // Wait 2s in suspension
+                onStart: () => {
+                    state.phase = 'REFORM';
+                    document.getElementById('main-title').innerText = "METAMORPHOSIS";
+                    document.getElementById('main-title').style.color = '#ffffff';
+                    if(audio.ctx) audio.triggerReform();
+                    
+                    // Camera move closer
+                    gsap.to(camera.position, { z: 6, y: 2, duration: 6, ease: "power1.inOut" });
+                    
+                    // Material becomes emissive/glassy
+                    material.color.setHex(0xffffff);
+                    material.roughness = 0.0;
+                    material.metalness = 0.9;
+                    material.emissive.setHex(0x111133);
+                }
+            });
+            
+            // 25s: Reset/Loop?
+            // For showcase, we just hold the final form.
+        }
+
+        // ------------------------------------------------------------------
+        // RENDER LOOP
+        // ------------------------------------------------------------------
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+            
+            finalPass.uniforms.time.value = time;
+            
+            if (state.started) {
+                // Update particles
+                // Optimization: Do minimal math in JS loop
+                
+                for (let i = 0; i < CONFIG.particleCount; i++) {
+                    const idx = i * 3;
+                    
+                    // 1. Base Position
+                    const px = pOriginal[idx];
+                    const py = pOriginal[idx+1];
+                    const pz = pOriginal[idx+2];
+                    
+                    // 2. Explosion offset
+                    // Distance = Velocity * Time * ShatterFactor
+                    // We use ShatterFactor as a "progress" 0->1
+                    // To make it look like physics, we treat ShatterFactor as time, but scaled
+                    
+                    const sf = factors.shatter; // 0 to 1
+                    const rf = factors.reform;  // 0 to 1
+                    
+                    // Explosion logic
+                    // We want: Solid -> Explode Out -> Slow Down (Drag) -> Stop
+                    // Simple easing function on sf isn't enough for physics feel.
+                    // Let's assume sf linearly maps to time, and we apply a drag curve.
+                    
+                    // Explosion distance scalar: fast out, slow drift
+                    // d(t) = v * (1 - exp(-k*t)) / k  (Analytic drag)
+                    // Let's just use power curves
+                    const explosionDist = (Math.pow(sf, 0.5) * 4.0); 
+                    
+                    let ex = px + vExplode[idx] * explosionDist;
+                    let ey = py + vExplode[idx+1] * explosionDist;
+                    let ez = pz + vExplode[idx+2] * explosionDist;
+                    
+                    // Add gravity drop during shatter
+                    ey -= sf * 2.0; 
+                    
+                    // 3. Reform Target
+                    const tx = pTarget[idx];
+                    const ty = pTarget[idx+1];
+                    const tz = pTarget[idx+2];
+                    
+                    // 4. Blend
+                    // Lerp from Exploded to Target based on rf
+                    // Add some noise turbulence during reform
+                    
+                    let fx = ex + (tx - ex) * rf;
+                    let fy = ey + (ty - ey) * rf;
+                    let fz = ez + (tz - ez) * rf;
+                    
+                    // Noise
+                    if (rf > 0.01 && rf < 0.99) {
+                        const noiseFreq = 2.0;
+                        const noiseAmp = (1.0 - Math.abs(rf - 0.5)*2) * 0.5; // Peak at 0.5
+                        fx += Math.sin(time * 5 + i) * noiseAmp;
+                        fy += Math.cos(time * 5 + i) * noiseAmp;
+                        fz += Math.sin(time * 5 + i * 0.5) * noiseAmp;
+                    }
+                    
+                    dummy.position.set(fx, fy, fz);
+                    
+                    // Rotation
+                    // Spin fast on shatter
+                    const currentRot = rotSpeed[idx] * time * (1.0 + sf * 5.0);
+                    dummy.rotation.set(currentRot, currentRot * 0.5, currentRot * 0.2);
+                    
+                    // Scale
+                    // Scale in at start
+                    // Pulse at end
+                    let s = 1.0;
+                    if (time < 2.0) s = Math.min(1.0, time * 0.5 + randomOffsets[i]);
+                    
+                    if (rf > 0.8) {
+                        s = 0.8 + Math.sin(time * 2 + i)*0.2;
+                    }
+                    
+                    dummy.scale.setScalar(s * (0.5 + randomOffsets[i]*0.5));
+                    
+                    dummy.updateMatrix();
+                    instancedMesh.setMatrixAt(i, dummy.matrix);
+                }
+                instancedMesh.instanceMatrix.needsUpdate = true;
+                
+                // Update Timecode
+                const tMs = Math.floor(time * 100);
+                const tSec = Math.floor(time);
+                const tMin = Math.floor(tSec / 60);
+                document.getElementById('time-code').innerText = 
+                    `${tMin.toString().padStart(2,'0')}:${(tSec%60).toString().padStart(2,'0')}:${(tMs%100).toString().padStart(2,'0')}`;
+            }
+
+            controls.update();
+            composer.render();
+        }
+
+        // ------------------------------------------------------------------
+        // HANDLERS
+        // ------------------------------------------------------------------
+        
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            composer.setSize(width, height);
+        });
+
+        const startBtn = document.getElementById('start-btn');
+        startBtn.addEventListener('click', () => {
+            state.started = true;
+            audio.init();
+            
+            gsap.to('#fade-overlay', { opacity: 0, duration: 2 });
+            gsap.to('#start-btn', { opacity: 0, pointerEvents: 'none', duration: 0.5 });
+            
+            startTimeline();
+            animate();
+        });
+
+    </script>
+</body>
+</html>
