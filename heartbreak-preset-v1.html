@@ -1,0 +1,599 @@
+<!-- 
+    HEARTBREAK PRESET — V1.0
+    "The Visual Floor"
+    
+    This is the foundation for all Heartbreak Ink 3D projects.
+    It defines the renderer, lighting, post-processing, and camera feel.
+    
+    Authored by: Flux ⚡
+    Date: 2026-02-26
+    
+    CORE PRINCIPLES:
+    1. ACES Filmic Tone Mapping + SRGB Color Space (Non-negotiable)
+    2. Procedural Studio HDRI (Reflections look expensive)
+    3. Cinematic Post-Processing (Bloom + Grain + Vignette + Chromatic Aberration)
+    4. "Breathing" Motion (Nothing is static)
+    5. Interactive by default (Damped orbit)
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heartbreak Preset v1 — The Visual Floor</title>
+    <style>
+        /* BASE RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #050505; /* Deepest charcoal, not pure black */
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        /* CANVAS CONTAINER */
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI OVERLAY (Standard Heartbreak UI Stub) */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            mix-blend-mode: difference; /* Ensures visibility on bright/dark */
+            color: white;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+
+        .title-block h1 {
+            font-size: 4rem;
+            line-height: 0.9;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin: 0;
+        }
+
+        .loader {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 0.8rem;
+            letter-spacing: 0.2em;
+            z-index: 20;
+            transition: opacity 0.5s ease;
+        }
+    </style>
+
+    <!-- IMPORT MAP: Three.js r160+ and Addons -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- UI LAYER -->
+    <div class="loader" id="loader">INITIALIZING FLUX CORE...</div>
+    
+    <div id="ui-layer">
+        <div class="header">
+            <span>Heartbreak Ink</span>
+            <span>Est. 2026</span>
+        </div>
+        <div class="footer">
+            <div class="title-block">
+                <h1>VISUAL<br>FLOOR</h1>
+            </div>
+            <div class="status">
+                Flux Preset v1.0<br>
+                Renderer: WebGL2<br>
+                Post: Active
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D CONTAINER -->
+    <div id="canvas-container"></div>
+
+    <!-- MAIN SCRIPT -->
+    <script type="module">
+        // ------------------------------------------------------------------
+        // IMPORTS
+        // ------------------------------------------------------------------
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        
+        // POST PROCESSING
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+
+        // ANIMATION
+        import gsap from 'gsap';
+
+        // ------------------------------------------------------------------
+        // CONFIGURATION (Heartbreak Standard)
+        // ------------------------------------------------------------------
+        const CONFIG = {
+            debug: false,
+            renderer: {
+                pixelRatio: Math.min(window.devicePixelRatio, 2), // Cap at 2 for perf
+                toneMapping: THREE.ACESFilmicToneMapping,
+                exposure: 1.0,
+            },
+            camera: {
+                fov: 45,
+                near: 0.1,
+                far: 100,
+                pos: new THREE.Vector3(0, 0.5, 5),
+            },
+            post: {
+                bloom: {
+                    threshold: 0.85, // Only very bright things glow
+                    strength: 0.6,
+                    radius: 0.8
+                }
+            },
+            colors: {
+                bg: 0x050505,
+                ambient: 0x111111,
+                spotLight: 0xffeebb,
+                fog: 0x050505
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // INIT BOILERPLATE
+        // ------------------------------------------------------------------
+        const container = document.getElementById('canvas-container');
+        const loaderEl = document.getElementById('loader');
+
+        // Scene
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(CONFIG.colors.bg);
+        // Exponential fog for deep atmosphere
+        scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.15); 
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, window.innerWidth / window.innerHeight, CONFIG.camera.near, CONFIG.camera.far);
+        camera.position.copy(CONFIG.camera.pos);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: false, // We use SMAA pass instead
+            powerPreference: "high-performance",
+            stencil: false,
+            depth: true 
+        });
+        renderer.setPixelRatio(CONFIG.renderer.pixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = CONFIG.renderer.toneMapping;
+        renderer.toneMappingExposure = CONFIG.renderer.exposure;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05; // Heavy weight feeling
+        controls.enablePan = false;
+        controls.minDistance = 2;
+        controls.maxDistance = 10;
+        // Auto-orbit stub (can be enabled via GSAP)
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+
+        // ------------------------------------------------------------------
+        // LIGHTING SYSTEM (The "Studio" Setup)
+        // ------------------------------------------------------------------
+        
+        // 1. Procedural Environment Map (PMREM)
+        // This generates a high-quality reflection map from a temporary scene
+        function initEnvironment() {
+            const pmremGenerator = new THREE.PMREMGenerator(renderer);
+            pmremGenerator.compileEquirectangularShader();
+
+            // Create a virtual studio scene for reflections
+            const envScene = new THREE.Scene();
+            
+            // "Softbox" planes - Emissive rectangles
+            const boxGeo = new THREE.PlaneGeometry(1, 1);
+            const emissiveMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+            
+            // Key light panel (Cool white, intense)
+            const light1 = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xeef1ff, toneMapped: false }));
+            light1.scale.set(10, 10, 1);
+            light1.position.set(-5, 5, 5);
+            light1.lookAt(0, 0, 0);
+            envScene.add(light1);
+
+            // Rim light panel (Warm, sharp)
+            const light2 = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xffaa88, toneMapped: false }));
+            light2.scale.set(8, 2, 1);
+            light2.position.set(5, 2, -5);
+            light2.lookAt(0, 0, 0);
+            envScene.add(light2);
+            
+            // Fill/Top light (Neutral)
+            const light3 = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+            light3.scale.set(10, 10, 1);
+            light3.position.set(0, 10, 0);
+            light3.lookAt(0, 0, 0);
+            envScene.add(light3);
+
+            // Generate the environment texture
+            const renderTarget = pmremGenerator.fromScene(envScene);
+            scene.environment = renderTarget.texture;
+            
+            // Clean up
+            envScene.traverse(o => { if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); });
+            pmremGenerator.dispose();
+        }
+        initEnvironment();
+
+        // 2. Real Scene Lights (for shadows and diffuse)
+        const ambientLight = new THREE.AmbientLight(CONFIG.colors.ambient, 0.5);
+        scene.add(ambientLight);
+
+        const spotLight = new THREE.SpotLight(CONFIG.colors.spotLight, 200); // High intensity for PBR
+        spotLight.position.set(5, 8, 5);
+        spotLight.angle = Math.PI / 6;
+        spotLight.penumbra = 0.5;
+        spotLight.castShadow = true;
+        spotLight.shadow.bias = -0.0001;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        scene.add(spotLight);
+
+        // ------------------------------------------------------------------
+        // DEMO SCENE CONTENT (Geometric showcase)
+        // ------------------------------------------------------------------
+        const objectGroup = new THREE.Group();
+        scene.add(objectGroup);
+
+        // Materials Palette
+        const mats = {
+            darkMetal: new THREE.MeshPhysicalMaterial({ 
+                color: 0x111111, 
+                metalness: 0.9, 
+                roughness: 0.1, 
+                clearcoat: 1.0, 
+                clearcoatRoughness: 0.1 
+            }),
+            brushedGold: new THREE.MeshPhysicalMaterial({ 
+                color: 0xffaa44, 
+                metalness: 1.0, 
+                roughness: 0.35, 
+                clearcoat: 0.5 
+            }),
+            glass: new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                metalness: 0.1,
+                roughness: 0.05,
+                transmission: 0.95, // Glass
+                thickness: 0.5,
+                ior: 1.5
+            }),
+            matteWhite: new THREE.MeshPhysicalMaterial({
+                color: 0xeeeeee,
+                metalness: 0.0,
+                roughness: 0.9
+            })
+        };
+
+        // Floor (Reflective, dark)
+        const floorGeo = new THREE.PlaneGeometry(50, 50);
+        const floorMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0x050505, 
+            metalness: 0.5, 
+            roughness: 0.1,
+            dithering: true
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Hero Objects
+        const sphere = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8, 12), mats.darkMetal);
+        sphere.position.set(0, 0.8, 0);
+        sphere.castShadow = true;
+        sphere.receiveShadow = true;
+        objectGroup.add(sphere);
+
+        const torus = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.05, 16, 100), mats.brushedGold);
+        torus.rotation.x = Math.PI / 2;
+        torus.position.set(0, 0.8, 0);
+        torus.castShadow = true;
+        objectGroup.add(torus);
+
+        const cube = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mats.glass);
+        cube.position.set(1.2, 0.25, 0.5);
+        cube.castShadow = true;
+        cube.rotation.y = Math.PI / 4;
+        objectGroup.add(cube);
+        
+        // Floating "Text" or Logo Placeholder (Using simple geometry to avoid font loading complexity for template)
+        // In production, use Troika-Three-Text
+        const logoGroup = new THREE.Group();
+        const letterGeo = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+        const letterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0 });
+        
+        // Constructing an abstract "H"
+        const l1 = new THREE.Mesh(letterGeo, letterMat); l1.position.x = -0.2;
+        const l2 = new THREE.Mesh(letterGeo, letterMat); l2.position.x = 0.2;
+        const l3 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), letterMat);
+        logoGroup.add(l1, l2, l3);
+        logoGroup.position.set(0, 2.0, 0);
+        // scene.add(logoGroup); // Optional, kept out to keep focus on materials
+
+        // ------------------------------------------------------------------
+        // ATMOSPHERICS (Dust & Particles)
+        // ------------------------------------------------------------------
+        const dustCount = 400;
+        const dustGeo = new THREE.DodecahedronGeometry(0.02, 0);
+        const dustMat = new THREE.MeshBasicMaterial({ 
+            color: 0x88ccff, 
+            transparent: true, 
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+        });
+        const dustMesh = new THREE.InstancedMesh(dustGeo, dustMat, dustCount);
+        
+        const dummy = new THREE.Object3D();
+        const dustProps = []; // Store speed/offset for animation
+
+        for (let i = 0; i < dustCount; i++) {
+            // Random position in a box around center
+            dummy.position.set(
+                (Math.random() - 0.5) * 10,
+                Math.random() * 5,
+                (Math.random() - 0.5) * 10
+            );
+            dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+            dummy.scale.setScalar(0.5 + Math.random() * 0.5);
+            dummy.updateMatrix();
+            dustMesh.setMatrixAt(i, dummy.matrix);
+            
+            dustProps.push({
+                x: dummy.position.x,
+                y: dummy.position.y,
+                z: dummy.position.z,
+                speedY: 0.05 + Math.random() * 0.1,
+                speedRot: (Math.random() - 0.5) * 0.02,
+                timeOff: Math.random() * 100
+            });
+        }
+        scene.add(dustMesh);
+
+        // ------------------------------------------------------------------
+        // POST PROCESSING CHAIN
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        
+        // 1. Render Pass
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        // 2. Unreal Bloom (Selective glow)
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            CONFIG.post.bloom.strength,
+            CONFIG.post.bloom.radius,
+            CONFIG.post.bloom.threshold
+        );
+        composer.addPass(bloomPass);
+
+        // 3. Custom "Heartbreak" Shader (Grain + Vignette + Chromatic Aberration + Grade)
+        const heartbreakShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "time": { value: 0.0 },
+                "amount": { value: 0.002 }, // CA offset
+                "grainSize": { value: 1.5 },
+                "grainOpacity": { value: 0.08 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float amount; // Chromatic aberration
+                uniform float grainSize;
+                uniform float grainOpacity;
+                varying vec2 vUv;
+
+                // Random noise function
+                float random(vec2 p) {
+                    vec2 k1 = vec2(
+                        23.14069263277926, // e^pi (Gelfond's constant)
+                        2.665144142690225 // 2^sqrt(2) (Gelfond–Schneider constant)
+                    );
+                    return fract(cos(dot(p, k1)) * 12345.6789);
+                }
+
+                void main() {
+                    // 1. Chromatic Aberration
+                    float r = texture2D(tDiffuse, vUv + vec2(amount, 0.0)).r;
+                    float g = texture2D(tDiffuse, vUv).g;
+                    float b = texture2D(tDiffuse, vUv - vec2(amount, 0.0)).b;
+                    vec3 color = vec3(r, g, b);
+
+                    // 2. Film Grain
+                    vec2 uvRandom = vUv;
+                    uvRandom.y *= random(vec2(uvRandom.y, time));
+                    color += (random(uvRandom) - 0.5) * grainOpacity;
+
+                    // 3. Vignette
+                    vec2 center = vec2(0.5, 0.5);
+                    float dist = distance(vUv, center);
+                    float vignette = smoothstep(0.8, 0.2, dist * 0.8);
+                    color *= vignette;
+
+                    // 4. Color Grading (Teal Shadow push)
+                    // Simple lift/gamma/gain approx
+                    vec3 shadowColor = vec3(0.0, 0.02, 0.04);
+                    color = max(color, shadowColor); // Lift blacks slightly to teal
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        };
+        const heartbreakPass = new ShaderPass(heartbreakShader);
+        composer.addPass(heartbreakPass);
+
+        // 4. SMAA (Anti-aliasing)
+        const smaaPass = new SMAAPass(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+        composer.addPass(smaaPass);
+
+        // 5. Output Pass (Tone Mapping applied here)
+        const outputPass = new OutputPass();
+        composer.addPass(outputPass);
+
+        // ------------------------------------------------------------------
+        // ANIMATION LOOPS
+        // ------------------------------------------------------------------
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            const delta = clock.getDelta();
+
+            // 1. Update Controls
+            controls.update();
+
+            // 2. Update Dust Particles
+            // We only update position y and rotation for performance
+            for (let i = 0; i < dustCount; i++) {
+                const props = dustProps[i];
+                let y = props.y + Math.sin(time + props.timeOff) * 0.002; // Float up/down
+                
+                dummy.position.set(props.x, y, props.z);
+                dummy.rotation.set(
+                    time * props.speedRot,
+                    time * props.speedRot,
+                    0
+                );
+                dummy.scale.setScalar(0.5 + Math.sin(time + props.timeOff)*0.1); // Pulse size
+                dummy.updateMatrix();
+                dustMesh.setMatrixAt(i, dummy.matrix);
+            }
+            dustMesh.instanceMatrix.needsUpdate = true;
+
+            // 3. Camera Breathing (Subtle Z movement)
+            // Note: Don't fight OrbitControls. Only apply if not interacting or apply to a wrapper group.
+            // For this template, we apply a tiny drift to the LookAt target or camera offset if we weren't using OrbitControls.
+            // Since we use OrbitControls, we'll oscillate the object group instead to simulate "floating" relative to camera.
+            objectGroup.position.y = Math.sin(time * 0.5) * 0.05;
+            objectGroup.rotation.y = Math.sin(time * 0.2) * 0.02;
+
+            // 4. Update Shader Uniforms
+            heartbreakPass.uniforms.time.value = time;
+
+            // 5. Render
+            composer.render();
+        }
+
+        // ------------------------------------------------------------------
+        // RESIZE HANDLER
+        // ------------------------------------------------------------------
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize(width, height);
+            composer.setSize(width, height);
+        });
+
+        // ------------------------------------------------------------------
+        // AUDIO STUB (Gesture Gated)
+        // ------------------------------------------------------------------
+        let audioCtx;
+        const initAudio = () => {
+            if (audioCtx) return;
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+            console.log("Flux Audio: Context Resumed");
+            
+            // Placeholder: Connect nodes here
+            // const osc = audioCtx.createOscillator();
+            // osc.connect(audioCtx.destination);
+            // osc.start();
+            // osc.stop(audioCtx.currentTime + 0.1);
+            
+            // Remove listener
+            window.removeEventListener('click', initAudio);
+            window.removeEventListener('keydown', initAudio);
+        };
+        window.addEventListener('click', initAudio);
+        window.addEventListener('keydown', initAudio);
+
+        // ------------------------------------------------------------------
+        // START
+        // ------------------------------------------------------------------
+        // Hide loader
+        gsap.to('#loader', { opacity: 0, duration: 1, delay: 0.5, onComplete: () => {
+            document.getElementById('loader').style.display = 'none';
+        }});
+
+        animate();
+
+    </script>
+</body>
+</html>
