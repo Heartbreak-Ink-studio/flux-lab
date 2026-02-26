@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HEARTBREAK INK — DAYLIGHT</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #87CEEB;
+      font-family: "Courier New", monospace;
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    #watermark {
+      position: fixed;
+      right: 18px;
+      bottom: 14px;
+      color: rgba(255, 255, 255, 0.3);
+      letter-spacing: 0.15em;
+      font-size: 11px;
+      pointer-events: none;
+      user-select: none;
+      z-index: 20;
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="watermark">HEARTBREAK INK</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    const app = document.getElementById('app');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#87CEEB');
+    scene.fog = new THREE.Fog('#87CEEB', 25, 140);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
+    camera.position.set(-4, 3.3, 10);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    app.appendChild(renderer.domElement);
+
+    // Lighting: bright sunny warm day
+    const ambient = new THREE.AmbientLight('#fff8ea', 1.1);
+    scene.add(ambient);
+
+    const hemi = new THREE.HemisphereLight('#d8f3ff', '#8fcf6f', 0.65);
+    scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight('#fff5e0', 1.9);
+    sun.position.set(20, 28, 10);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 120;
+    sun.shadow.camera.left = -50;
+    sun.shadow.camera.right = 50;
+    sun.shadow.camera.top = 50;
+    sun.shadow.camera.bottom = -50;
+    sun.shadow.bias = -0.0002;
+    scene.add(sun);
+
+    // Ground
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(240, 80),
+      new THREE.MeshStandardMaterial({ color: '#74b95a', roughness: 0.95, metalness: 0.0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Street/path
+    const street = new THREE.Mesh(
+      new THREE.PlaneGeometry(220, 10),
+      new THREE.MeshStandardMaterial({ color: '#8f8f8f', roughness: 0.9, metalness: 0.0 })
+    );
+    street.rotation.x = -Math.PI / 2;
+    street.position.y = 0.02;
+    street.receiveShadow = true;
+    scene.add(street);
+
+    // Lane divider markers
+    const markerMat = new THREE.MeshStandardMaterial({ color: '#fff8cc', roughness: 0.7 });
+    for (let i = 0; i < 24; i++) {
+      const marker = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.04, 0.2), markerMat);
+      marker.position.set(-104 + i * 9, 0.05, 0);
+      marker.receiveShadow = true;
+      scene.add(marker);
+    }
+
+    // Neighborhood houses
+    const housePalette = ['#f4d6c2', '#d2e7f7', '#f7f1c8', '#d9f0d1', '#f3d1dd'];
+    function addHouse(x, z, width, depth, height, wallColor) {
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, depth),
+        new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.88, metalness: 0.02 })
+      );
+      base.position.set(x, height * 0.5, z);
+      base.castShadow = true;
+      base.receiveShadow = true;
+
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 1.08, height * 0.28, depth * 1.08),
+        new THREE.MeshStandardMaterial({ color: '#5f4d42', roughness: 0.9, metalness: 0.0 })
+      );
+      roof.position.set(0, height * 0.62, 0);
+      roof.castShadow = true;
+      roof.receiveShadow = true;
+      base.add(roof);
+
+      const door = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 0.16, height * 0.33, 0.08),
+        new THREE.MeshStandardMaterial({ color: '#7f5e44', roughness: 0.9 })
+      );
+      door.position.set(0, -height * 0.33, depth * 0.5 + 0.05);
+      base.add(door);
+
+      scene.add(base);
+    }
+
+    for (let i = 0; i < 7; i++) {
+      const x = -75 + i * 23;
+      addHouse(x, -15 - (i % 2) * 2, 8 + (i % 3), 7 + ((i + 1) % 2), 5.5 + (i % 2) * 1.2, housePalette[i % housePalette.length]);
+      addHouse(x + 10, 15 + ((i + 1) % 2) * 2, 7 + ((i + 2) % 3), 7, 5.2 + ((i + 1) % 2), housePalette[(i + 2) % housePalette.length]);
+    }
+
+    // Trees
+    function addTree(x, z, scale = 1) {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.25 * scale, 0.35 * scale, 2.4 * scale, 10),
+        new THREE.MeshStandardMaterial({ color: '#7a5230', roughness: 0.95 })
+      );
+      trunk.position.set(x, 1.2 * scale, z);
+      trunk.castShadow = true;
+      trunk.receiveShadow = true;
+      scene.add(trunk);
+
+      const canopy = new THREE.Mesh(
+        new THREE.SphereGeometry(1.25 * scale, 16, 12),
+        new THREE.MeshStandardMaterial({ color: '#4f9f46', roughness: 0.9 })
+      );
+      canopy.position.set(x, 3.0 * scale, z);
+      canopy.castShadow = true;
+      canopy.receiveShadow = true;
+      scene.add(canopy);
+    }
+
+    const treePositions = [
+      [-55, -21, 1.1], [-30, -23, 0.95], [5, -22, 1.15], [28, -21, 1.0], [52, -22, 1.05],
+      [-47, 22, 1.0], [-18, 21, 1.08], [12, 23, 0.92], [39, 21, 1.12], [68, 22, 1.0]
+    ];
+    treePositions.forEach(([x, z, s]) => addTree(x, z, s));
+
+    // Dust motes
+    const dustCount = 240;
+    const dustPositions = new Float32Array(dustCount * 3);
+    const dustSpeeds = new Float32Array(dustCount);
+    for (let i = 0; i < dustCount; i++) {
+      dustPositions[i * 3] = THREE.MathUtils.randFloatSpread(180);
+      dustPositions[i * 3 + 1] = THREE.MathUtils.randFloat(0.7, 7.5);
+      dustPositions[i * 3 + 2] = THREE.MathUtils.randFloatSpread(55);
+      dustSpeeds[i] = THREE.MathUtils.randFloat(0.05, 0.16);
+    }
+
+    const dustGeom = new THREE.BufferGeometry();
+    dustGeom.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    const dustMat = new THREE.PointsMaterial({
+      color: '#fff6db',
+      size: 0.07,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const dust = new THREE.Points(dustGeom, dustMat);
+    scene.add(dust);
+
+    // Character + animation
+    const loader = new GLTFLoader();
+    const clock = new THREE.Clock();
+    let mixer = null;
+    let soldier = null;
+    let walkSpeed = 2.1;
+
+    loader.load(
+      'https://threejs.org/examples/models/gltf/Soldier.glb',
+      (gltf) => {
+        soldier = gltf.scene;
+        soldier.scale.setScalar(1.35);
+        soldier.position.set(-90, 0, 0);
+        soldier.rotation.y = -Math.PI * 0.5;
+
+        soldier.traverse((obj) => {
+          if (obj.isMesh) {
+            obj.castShadow = true;
+            obj.receiveShadow = true;
+          }
+        });
+        scene.add(soldier);
+
+        mixer = new THREE.AnimationMixer(soldier);
+        const walkClip = gltf.animations.find((clip) => clip.name.toLowerCase().includes('walk')) || gltf.animations[0];
+        if (walkClip) {
+          const action = mixer.clipAction(walkClip);
+          action.play();
+          action.timeScale = 1.05;
+        }
+      },
+      undefined,
+      (err) => {
+        console.error('Failed to load Soldier.glb', err);
+      }
+    );
+
+    // Postprocessing: render -> subtle bloom -> grain -> light vignette
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.2, 0.35, 0.85);
+    composer.addPass(bloomPass);
+
+    const GrainShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        time: { value: 0 },
+        amount: { value: 0.028 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float time;
+        uniform float amount;
+        varying vec2 vUv;
+
+        float random(vec2 p) {
+          return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          float n = random(vUv * vec2(1280.0, 720.0) + time * 0.07) - 0.5;
+          color.rgb += n * amount;
+          gl_FragColor = color;
+        }
+      `
+    };
+
+    const VignetteShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        offset: { value: 1.15 },
+        darkness: { value: 0.22 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float offset;
+        uniform float darkness;
+        varying vec2 vUv;
+
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          vec2 uv = (vUv - vec2(0.5)) * offset;
+          float vig = smoothstep(0.85, 0.2, dot(uv, uv));
+          color.rgb = mix(color.rgb * (1.0 - darkness), color.rgb, vig);
+          gl_FragColor = color;
+        }
+      `
+    };
+
+    const grainPass = new ShaderPass(GrainShader);
+    const vignettePass = new ShaderPass(VignetteShader);
+    composer.addPass(grainPass);
+    composer.addPass(vignettePass);
+
+    const camLook = new THREE.Vector3();
+    const camTarget = new THREE.Vector3();
+
+    function animate() {
+      const dt = clock.getDelta();
+      const t = clock.elapsedTime;
+
+      if (mixer) mixer.update(dt);
+
+      // Soldier walks steadily forward down the street
+      if (soldier) {
+        soldier.position.x += walkSpeed * dt;
+        if (soldier.position.x > 100) soldier.position.x = -100;
+
+        // Camera follow with slight cinematic sway
+        const swayX = Math.sin(t * 0.8) * 0.28;
+        const swayY = Math.sin(t * 1.4) * 0.09;
+        camTarget.set(soldier.position.x - 7.4 + swayX, 3.25 + swayY, 6.2 + Math.cos(t * 0.6) * 0.15);
+        camera.position.lerp(camTarget, 0.06);
+
+        camLook.set(soldier.position.x + 6.0, 1.55, soldier.position.z);
+        camera.lookAt(camLook);
+      }
+
+      // Dust floating motion
+      const pos = dust.geometry.attributes.position;
+      for (let i = 0; i < dustCount; i++) {
+        const yIndex = i * 3 + 1;
+        const xIndex = i * 3;
+        pos.array[yIndex] += dustSpeeds[i] * dt;
+        pos.array[xIndex] += Math.sin(t * 0.25 + i) * 0.002;
+        if (pos.array[yIndex] > 8.5) pos.array[yIndex] = 0.5;
+      }
+      pos.needsUpdate = true;
+
+      // Gentle breathing light/pulse
+      sun.intensity = 1.85 + Math.sin(t * 0.33) * 0.08;
+      bloomPass.strength = 0.18 + Math.sin(t * 0.45) * 0.03;
+
+      grainPass.uniforms.time.value = t;
+
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
