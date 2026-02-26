@@ -319,6 +319,11 @@
                 uniform sampler2D tDiffuse;
                 varying vec2 vUv;
 
+                // Simple S-curve for contrast (must be declared before main)
+                float curve(float x) {
+                    return x * x * (3.0 - 2.0 * x);
+                }
+
                 void main() {
                     vec4 cTextureScreen = texture2D( tDiffuse, vUv );
                     
@@ -336,16 +341,11 @@
                     cResult = cTextureScreen.rgb + clamp(nIntensity, 0.0,1.0 ) * (cResult - cTextureScreen.rgb);
                     
                     // Slight color grading (Teal/Orange push)
-                    cResult.r = curve(cResult.r); // Contrast curve
+                    cResult.r = curve(cResult.r);
                     cResult.g = curve(cResult.g);
                     cResult.b = curve(cResult.b) * 1.1; // Blue tint
 
                     gl_FragColor =  vec4( cResult, cTextureScreen.a );
-                }
-                
-                // Simple S-curve for contrast
-                float curve(float x) {
-                    return x * x * (3.0 - 2.0 * x);
                 }
             `
         };
