@@ -1,0 +1,655 @@
+<!-- 
+    HEARTBREAK INK — SHOWCASE #1: VOID
+    "The Impossible Architecture"
+    
+    Concept: A non-euclidean journey through a folding brutalist megastructure.
+    
+    Authored by: Flux ⚡
+    Date: 2026-02-26
+    
+    TECHNICAL STACK:
+    1. Custom Vertex Shader: "World Bend" (Curved space effect)
+    2. InstancedMesh: Infinite tunnel generation
+    3. Reactive Audio: Procedural drone synthesizers linked to visual distortion
+    4. Post-Processing: HBI Standard (Bloom, Grain, Aberration) + Scanlines
+    5. Camera: GSAP path animation
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heartbreak Ink — VOID</title>
+    <style>
+        /* BASE RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            cursor: none; /* Hide cursor for immersion */
+        }
+
+        /* CANVAS CONTAINER */
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 3rem;
+            mix-blend-mode: difference;
+            color: #fff;
+            opacity: 0; /* Fade in later */
+            transition: opacity 2s ease;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.7rem;
+            font-weight: 700;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 1rem;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .title-block {
+            text-align: left;
+        }
+
+        .title-block h1 {
+            font-size: 6rem;
+            line-height: 0.85;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            margin: 0;
+            transform: translateX(-5px); /* Optical alignment */
+        }
+        
+        .title-block .subtitle {
+            font-size: 0.9rem;
+            letter-spacing: 0.5em;
+            margin-top: 1rem;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        .status-block {
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-size: 0.7rem;
+            line-height: 1.5;
+            opacity: 0.6;
+        }
+
+        /* START BUTTON / INTERACTION PROMPT */
+        #start-prompt {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            color: white;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            letter-spacing: 0.2em;
+            cursor: pointer;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 1rem 2rem;
+            background: rgba(0,0,0,0.8);
+            transition: all 0.3s ease;
+        }
+        
+        #start-prompt:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.8);
+        }
+
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    </style>
+
+    <!-- IMPORT MAP -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- START PROMPT -->
+    <div id="start-prompt">[ INITIALIZE VOID ]</div>
+
+    <!-- UI LAYER -->
+    <div id="ui-layer">
+        <div class="header">
+            <span>Showcase 01</span>
+            <span>Heartbreak Ink</span>
+        </div>
+        <div class="footer">
+            <div class="title-block">
+                <h1>VOID</h1>
+                <div class="subtitle">Non-Euclidean Architecture</div>
+            </div>
+            <div class="status-block">
+                SYS.OPTIMAL<br>
+                AUDIO.REACTIVE<br>
+                GEOM.UNSTABLE
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D CONTAINER -->
+    <div id="canvas-container"></div>
+
+    <!-- SHADERS -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        // THE "WORLD BEND" SHADER
+        // Warps geometry based on Z-depth to create an infinite curving tunnel effect
+        
+        uniform float time;
+        uniform float curveStrength;
+        
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vPos;
+        varying float vDist;
+
+        // Rotation matrix
+        mat2 rotate2d(float _angle){
+            return mat2(cos(_angle),-sin(_angle),
+                        sin(_angle),cos(_angle));
+        }
+
+        void main() {
+            vUv = uv;
+            vNormal = normalize(normalMatrix * normal);
+            
+            // Standard position first
+            vec3 pos = position;
+            
+            // Apply Instance Matrix if InstancedMesh
+            #ifdef USE_INSTANCING
+                pos = (instanceMatrix * vec4(pos, 1.0)).xyz;
+            #endif
+            
+            // Calculate world position
+            vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+            
+            // --- THE BEND (Non-Euclidean Twist) ---
+            float z = worldPos.z;
+            
+            // 1. The "Corkscrew" - Twist geometry around Z axis based on depth
+            float twist = z * 0.05 + time * 0.2;
+            vec2 twistedXY = rotate2d(twist) * worldPos.xy;
+            worldPos.x = twistedXY.x;
+            worldPos.y = twistedXY.y;
+            
+            // 2. The "Horizon Fold" - Curve the world upwards into a loop
+            // This creates the Inception-style fold
+            float curve = pow(z * 0.02, 2.0) * 4.0;
+            worldPos.y += curve;
+            
+            // 3. "Breathing" Geometry - Pulse the tunnel width
+            float pulse = sin(time * 0.5 + z * 0.2) * 0.5;
+            worldPos.x += sign(worldPos.x) * pulse;
+            
+            // Pass to fragment
+            vPos = worldPos.xyz;
+            vDist = z;
+            
+            gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        // BRUTALIST CONCRETE / VOID MATERIAL
+        
+        uniform float time;
+        uniform vec3 baseColor;
+        uniform vec3 lightColor;
+        
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vPos;
+        varying float vDist;
+
+        float random(vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+        }
+
+        void main() {
+            // Basic lighting
+            vec3 lightDir = normalize(vec3(0.5, 1.0, 0.5));
+            float diff = max(dot(vNormal, lightDir), 0.0);
+            
+            // Noise for concrete texture
+            float noise = random(vUv * 10.0 + floor(vPos.xz));
+            
+            // Moving light strip effect
+            float strip = step(0.95, fract(vPos.z * 0.1 - time * 0.5 + vPos.y * 0.1));
+            vec3 emission = vec3(strip) * lightColor * 2.0;
+            
+            // Base concrete color
+            vec3 color = baseColor * (0.5 + diff * 0.5);
+            color += (noise - 0.5) * 0.05; // Grain
+            
+            // Combine
+            color += emission;
+            
+            // Distance fog (Pitch black void)
+            float fog = smoothstep(100.0, 50.0, abs(vPos.z)); // Fade out far away
+            // color = mix(vec3(0.0), color, fog); // Let Three.js fog handle this naturally? No, manual control is better for shader mats
+            
+            gl_FragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <!-- MAIN SCRIPT -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import gsap from 'gsap';
+
+        // ------------------------------------------------------------------
+        // CONFIG
+        // ------------------------------------------------------------------
+        const CONFIG = {
+            colors: {
+                bg: 0x000000,
+                fog: 0x000000,
+                light: 0xff3300, // Heartbreak Orange/Red
+                concrete: 0x1a1a1a
+            },
+            tunnelLength: 80,
+            tunnelSegments: 40
+        };
+
+        let isPlaying = false;
+        let audioCtx;
+        let oscillators = [];
+        let gainNodes = [];
+        let filterNode;
+
+        // ------------------------------------------------------------------
+        // SCENE SETUP
+        // ------------------------------------------------------------------
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(CONFIG.colors.bg);
+        scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Start position
+        camera.position.set(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        // ------------------------------------------------------------------
+        // AUDIO SYSTEM (Procedural Drone)
+        // ------------------------------------------------------------------
+        function initAudio() {
+            if (audioCtx) return;
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+            
+            // Master Gain
+            const masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.4;
+            masterGain.connect(audioCtx.destination);
+            
+            // Low Drone (Sawtooth)
+            const osc1 = audioCtx.createOscillator();
+            osc1.type = 'sawtooth';
+            osc1.frequency.value = 55; // A1
+            const gain1 = audioCtx.createGain();
+            gain1.gain.value = 0.3;
+            
+            // High Ethereal (Sine) - The "singing" void
+            const osc2 = audioCtx.createOscillator();
+            osc2.type = 'sine';
+            osc2.frequency.value = 110; // A2
+            const gain2 = audioCtx.createGain();
+            gain2.gain.value = 0.0; // Starts silent
+            
+            // Sub Bass (Sine)
+            const osc3 = audioCtx.createOscillator();
+            osc3.type = 'sine';
+            osc3.frequency.value = 27.5; // A0
+            const gain3 = audioCtx.createGain();
+            gain3.gain.value = 0.5;
+
+            // Filter (Lowpass that opens up)
+            filterNode = audioCtx.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            filterNode.frequency.value = 100;
+            filterNode.Q.value = 1;
+
+            // Proper connections through filter
+            osc1.connect(filterNode);
+            osc2.connect(filterNode);
+            osc3.connect(filterNode);
+            filterNode.connect(masterGain);
+
+            osc1.start();
+            osc2.start();
+            osc3.start();
+
+            oscillators = [osc1, osc2, osc3];
+            gainNodes = [gain1, gain2, gain3];
+            
+            // Fade in
+            gsap.to(filterNode.frequency, { value: 2000, duration: 30, ease: "power2.inOut" });
+            gsap.to(gain2.gain, { value: 0.2, duration: 10, delay: 5 });
+        }
+
+        // ------------------------------------------------------------------
+        // GEOMETRY: The Impossible Tunnel
+        // ------------------------------------------------------------------
+        const tunnelGroup = new THREE.Group();
+        scene.add(tunnelGroup);
+
+        const boxSize = 0.5;
+        const gridW = 30; // Wider tunnel
+        const gridD = 100; // Longer tunnel
+        const boxGeo = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+        
+        // Custom Shader Material for the boxes
+        const voidMat = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                baseColor: { value: new THREE.Color(CONFIG.colors.concrete) },
+                lightColor: { value: new THREE.Color(CONFIG.colors.light) },
+                curveStrength: { value: 0.0 }
+            },
+            vertexShader: document.getElementById('vertexShader').textContent,
+            fragmentShader: document.getElementById('fragmentShader').textContent,
+        });
+
+        // Top and Bottom planes of boxes
+        const instanceCount = gridW * gridD * 2; // Floor + Ceiling
+        const instancedMesh = new THREE.InstancedMesh(boxGeo, voidMat, instanceCount);
+        
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        
+        // Generate Floor
+        for(let z=0; z<gridD; z++) {
+            for(let x=0; x<gridW; x++) {
+                // Floor
+                dummy.position.set(
+                    (x - gridW/2) * boxSize * 1.5,
+                    -2, // Y level
+                    (z - 10) * boxSize * 1.5 // Start slightly behind cam
+                );
+                // Random height offset for "greeble" look
+                dummy.scale.y = 1 + Math.random() * 4;
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(idx++, dummy.matrix);
+                
+                // Ceiling
+                dummy.position.y = 2; // Mirror Y
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(idx++, dummy.matrix);
+            }
+        }
+        tunnelGroup.add(instancedMesh);
+
+        // Add some "Monoliths" floating in the center
+        const monolithGeo = new THREE.BoxGeometry(0.5, 3, 0.5);
+        const monolithMat = new THREE.MeshBasicMaterial({ color: 0x000000 }); // Pure black hole
+        
+        const monoliths = [];
+        for(let i=0; i<15; i++) {
+            const m = new THREE.Mesh(monolithGeo, monolithMat);
+            m.position.set(
+                (Math.random() - 0.5) * 4,
+                0,
+                10 + i * 8 // Spaced out down the track
+            );
+            m.rotation.y = Math.random() * Math.PI;
+            m.rotation.z = (Math.random() - 0.5) * 0.5;
+            tunnelGroup.add(m);
+            monoliths.push(m);
+            
+            // Rim light for monolith (simple wireframe box around it)
+            const edges = new THREE.EdgesGeometry(monolithGeo);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: CONFIG.colors.light }));
+            m.add(line);
+        }
+
+        // ------------------------------------------------------------------
+        // POST PROCESSING
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        // Bloom
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5, // Strength
+            0.4, // Radius
+            0.85 // Threshold
+        );
+        composer.addPass(bloomPass);
+
+        // Heartbreak Composite Shader (Grain, Aberration, Vignette)
+        const compositeShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "time": { value: 0 },
+                "aberration": { value: 0.003 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float aberration;
+                varying vec2 vUv;
+
+                float random(vec2 p) { return fract(cos(dot(p, vec2(23.14, 2.66))) * 12345.6789); }
+
+                void main() {
+                    // Aberration
+                    float r = texture2D(tDiffuse, vUv + vec2(aberration, 0.0)).r;
+                    float g = texture2D(tDiffuse, vUv).g;
+                    float b = texture2D(tDiffuse, vUv - vec2(aberration, 0.0)).b;
+                    vec3 color = vec3(r, g, b);
+
+                    // Grain
+                    color += (random(vUv * time) - 0.5) * 0.1;
+
+                    // Vignette
+                    float dist = distance(vUv, vec2(0.5));
+                    color *= smoothstep(0.8, 0.2, dist);
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        };
+        const compositePass = new ShaderPass(compositeShader);
+        composer.addPass(compositePass);
+        
+        // Output with Tone Mapping
+        const outputPass = new OutputPass();
+        composer.addPass(outputPass);
+
+        // ------------------------------------------------------------------
+        // ANIMATION LOOP
+        // ------------------------------------------------------------------
+        const clock = new THREE.Clock();
+        
+        // Camera Path Logic
+        const camState = { z: 0, rotZ: 0, fov: 60, speed: 0.1 };
+        let isEnding = false;
+
+        function triggerEndSequence() {
+            // "Crash" effect
+            const tl = gsap.timeline();
+            
+            // 1. Glitch Spike
+            tl.to(compositePass.uniforms.aberration, { value: 0.05, duration: 0.1, yoyo: true, repeat: 3 })
+              .to(bloomPass, { strength: 5.0, duration: 0.2, yoyo: true, repeat: 1 }, "<")
+            
+            // 2. Slow Down & Stabilize
+            .to(camState, { speed: 0.0, duration: 2, ease: "power2.out" })
+            .to(camera.rotation, { z: 0, x: 0, y: 0, duration: 2, ease: "power2.out" }, "<")
+            .to(camera.position, { x: 0, y: 0, duration: 2, ease: "power2.out" }, "<")
+            
+            // 3. Reveal Title
+            .call(() => {
+                const div = document.createElement('div');
+                div.innerHTML = "HEARTBREAK<br><span style='font-size:0.4em; letter-spacing:0.8em; display:block; margin-top:1rem;'>INK</span>";
+                div.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    font-size: 8vw; font-weight: 900; color: #fff; text-align: center;
+                    z-index: 100; letter-spacing: -0.05em; line-height: 0.8;
+                    font-family: 'Helvetica Neue', sans-serif; mix-blend-mode: difference;
+                    opacity: 0; filter: blur(20px); transform: translate(-50%, -50%) scale(1.5);
+                `;
+                document.body.appendChild(div);
+                
+                // Animate text in
+                gsap.to(div, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 2, ease: "expo.out" });
+            })
+            
+            // 4. Fade to black
+            .to(scene.fog, { density: 1.0, duration: 5, delay: 2 });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            
+            // Only update if playing
+            if (!isPlaying) {
+                // Idle animation
+                camera.position.x = Math.sin(time * 0.2) * 0.5;
+                camera.position.y = Math.cos(time * 0.3) * 0.5;
+                camera.lookAt(0, 0, 10);
+                composer.render();
+                return;
+            }
+
+            // 1. Move Camera Forward (Exponentially faster then slow down)
+            if (!isEnding) {
+                // Accelerate
+                if (camState.z < 100) camState.speed += 0.0005;
+                camState.z += camState.speed;
+            } else {
+                // Slow crawl at end
+                camState.z += 0.02;
+            }
+            camera.position.z = camState.z;
+            
+            // 2. Camera Shake/Sway (Intensifies with speed)
+            const shake = camState.speed * 2.0;
+            camera.position.x = Math.sin(time * 2.5) * shake;
+            camera.position.y = Math.cos(time * 1.8) * shake;
+            
+            // 3. Roll (Disorienting)
+            camera.rotation.z = Math.sin(time * 0.1) * 0.2 + (camState.speed * 0.5);
+            
+            // 4. Update Shader Time
+            voidMat.uniforms.time.value = time;
+            compositePass.uniforms.time.value = time;
+            
+            // 5. Audio Reactivity
+            if (audioCtx) {
+                // Pulse bloom based on speed
+                bloomPass.strength = 1.0 + (camState.speed * 10.0) + Math.sin(time * 15) * 0.2;
+                // Pitch shift up as we speed up
+                if(oscillators[0]) oscillators[0].frequency.value = 55 + (camState.speed * 200);
+            }
+            
+            // 6. End Sequence Trigger
+            if (camState.z > 120 && !isEnding) {
+                isEnding = true;
+                triggerEndSequence();
+            }
+
+            composer.render();
+        }
+
+        // ------------------------------------------------------------------
+        // INTERACTION
+        // ------------------------------------------------------------------
+        const startBtn = document.getElementById('start-prompt');
+        const ui = document.getElementById('ui-layer');
+
+        startBtn.addEventListener('click', () => {
+            initAudio();
+            isPlaying = true;
+            
+            // UI Transition
+            startBtn.classList.add('hidden');
+            ui.style.opacity = 1;
+            
+            // Intro Animation
+            gsap.to(camera.rotation, { z: Math.PI * 2, duration: 4, ease: "power2.inOut" }); // Barrel roll start
+            
+            // Warp Effect Kick-in
+            gsap.to(compositePass.uniforms.aberration, { value: 0.01, duration: 0.2, yoyo: true, repeat: 5 });
+            
+            animate();
+        });
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>

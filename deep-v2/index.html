@@ -1,0 +1,759 @@
+<!-- 
+    HEARTBREAK INK — SHOWCASE 4: DEEP (V2 REBUILD)
+    "The Descent"
+    
+    Concept: A 45-second vertical descent from sunlit surface to the crushing abyss.
+    
+    Authored by: Flux ⚡
+    Date: 2026-02-26
+    
+    REBUILD NOTES:
+    - Fixed GLSL function declarations (declared before main).
+    - Hardened variable scope (no undefined refs).
+    - Standardized Three.js r160 imports via map.
+    - Integrated Web Audio Context resumption on click.
+    - Optimized particle systems for depth.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Showcase 4: Deep — Heartbreak Ink</title>
+    <style>
+        /* BASE RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #000000;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            user-select: none;
+        }
+
+        /* CANVAS */
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* Center initially */
+            align-items: center;
+            color: white;
+            transition: opacity 1s ease;
+        }
+
+        /* START PROMPT */
+        #start-prompt {
+            text-align: center;
+            pointer-events: auto; /* Clickable */
+            cursor: pointer;
+            transition: opacity 0.5s;
+        }
+
+        #start-prompt h1 {
+            font-size: 0.8rem;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            font-weight: 400;
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+
+        #start-prompt .sub {
+            font-size: 0.6rem;
+            letter-spacing: 0.1em;
+            opacity: 0.5;
+            text-transform: uppercase;
+        }
+
+        /* FINAL TITLE */
+        #final-title {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            opacity: 0;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #final-title h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            text-transform: uppercase;
+            color: #ffffff;
+            line-height: 0.9;
+            margin: 0;
+        }
+
+        #final-title .scanline {
+            width: 100%;
+            height: 1px;
+            background: rgba(255,255,255,0.3);
+            margin-top: 1rem;
+            transform-origin: left;
+            transform: scaleX(0);
+        }
+
+        /* DEPTH METER (Optional HUD) */
+        #depth-meter {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.5);
+            opacity: 0; /* Hidden initially */
+        }
+    </style>
+
+    <!-- IMPORT MAP: Three.js r160+ -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- UI -->
+    <div id="ui-layer">
+        <div id="start-prompt">
+            <h1>Initialize Descent</h1>
+            <div class="sub">[ Click to Submerge ]</div>
+        </div>
+    </div>
+
+    <div id="final-title">
+        <h1>HEARTBREAK<br>INK.</h1>
+        <div class="scanline" id="title-line"></div>
+    </div>
+
+    <div id="depth-meter">DEPTH: <span id="depth-val">0</span>m</div>
+
+    <!-- CANVAS -->
+    <div id="canvas-container"></div>
+
+    <!-- SCRIPT -->
+    <script type="module">
+        // ------------------------------------------------------------------
+        // 1. IMPORTS & SETUP
+        // ------------------------------------------------------------------
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import gsap from 'gsap';
+
+        // FLUX CONFIG
+        const CONFIG = {
+            duration: 45, // Seconds for descent
+            depth: 200,   // Units deep
+            colors: {
+                surface: new THREE.Color(0x006994), // Ocean Blue
+                mid: new THREE.Color(0x001e36),     // Deep Teal
+                abyss: new THREE.Color(0x000000),   // Void
+                fogDensitySurface: 0.02,
+                fogDensityAbyss: 0.08,
+            }
+        };
+
+        // GLOBAL STATE
+        const state = {
+            depthValues: { value: 0 }, // 0 to 1 (Surface to Abyss)
+            isPlaying: false,
+            time: 0
+        };
+
+        // SCENE SETUP
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        // Fog starts blueish
+        scene.fog = new THREE.FogExp2(CONFIG.colors.surface, CONFIG.colors.fogDensitySurface);
+        scene.background = CONFIG.colors.surface;
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
+        camera.position.set(0, 0, 10); // Start at surface
+        camera.lookAt(0, -50, 0); // Look down
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        // ------------------------------------------------------------------
+        // 2. SHADERS (Volumetrics, Jellyfish, Artifact)
+        // ------------------------------------------------------------------
+
+        // --- GOD RAYS SHADER (Conical volume from top) ---
+        const godRayShader = {
+            uniforms: {
+                time: { value: 0 },
+                color: { value: new THREE.Color(0xaaccff) },
+                decay: { value: 0.95 },
+                opacity: { value: 0.6 }
+            },
+            vertexShader: `
+                varying vec3 vWorldPosition;
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 color;
+                uniform float opacity;
+                varying vec3 vWorldPosition;
+                varying vec2 vUv;
+
+                // Simple noise
+                float random(vec2 st) {
+                    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+                }
+
+                void main() {
+                    // Rays fade out as they go down (Y axis)
+                    float height = vWorldPosition.y;
+                    float alpha = smoothstep(-50.0, 10.0, height); 
+                    
+                    // Moving noise for "shimmer"
+                    float noise = sin(vWorldPosition.x * 2.0 + time) * 0.5 + 0.5;
+                    float noise2 = cos(vWorldPosition.z * 1.5 - time * 0.5) * 0.5 + 0.5;
+                    
+                    // Conical fade
+                    float rayIntensity = noise * noise2 * alpha * opacity;
+                    
+                    gl_FragColor = vec4(color, rayIntensity * 0.3); // Keep it subtle
+                }
+            `
+        };
+
+        // --- JELLYFISH SHADER (Pulsing Glow) ---
+        // Vertex moves vertices in sine wave; Fragment handles bioluminescence
+        const jellyShader = {
+            uniforms: {
+                time: { value: 0 },
+                baseColor: { value: new THREE.Color(0x00ffff) },
+                pulseSpeed: { value: 2.0 }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float pulseSpeed;
+                varying vec2 vUv;
+                varying float vElevation;
+
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    
+                    // Bell contraction/expansion
+                    // We assume the bell is roughly spherical/domed. 
+                    // Let's contract the bottom half (y < 0) based on time.
+                    
+                    float pulse = sin(time * pulseSpeed) * 0.5 + 0.5;
+                    if(pos.y < 0.0) {
+                        pos.x *= 1.0 - (pulse * 0.2);
+                        pos.z *= 1.0 - (pulse * 0.2);
+                    }
+                    
+                    vElevation = pos.y;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 baseColor;
+                uniform float time;
+                varying vec2 vUv;
+                varying float vElevation;
+
+                void main() {
+                    // Gradient opacity from center
+                    float opacity = 0.8;
+                    
+                    // Bioluminescent veins (sine wave pattern)
+                    float veins = sin(vUv.y * 20.0 + time) * 0.5 + 0.5;
+                    vec3 glow = baseColor + (veins * 0.5);
+
+                    // Fade edges
+                    if(vElevation < -0.5) opacity = 0.0; // Cutoff
+                    
+                    gl_FragColor = vec4(glow, opacity * 0.6); 
+                }
+            `
+        };
+
+        // --- ARTIFACT SHADER (Fresnel + Void) ---
+        const artifactShader = {
+            uniforms: {
+                time: { value: 0 },
+                glowColor: { value: new THREE.Color(0xff0044) }, // Heartbreak Red/Pink
+                viewVector: { value: new THREE.Vector3() }
+            },
+            vertexShader: `
+                uniform float time;
+                varying vec3 vNormal;
+                varying vec3 vViewPosition;
+                
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    vViewPosition = -mvPosition.xyz;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 glowColor;
+                uniform float time;
+                varying vec3 vNormal;
+                varying vec3 vViewPosition;
+
+                void main() {
+                    vec3 normal = normalize(vNormal);
+                    vec3 viewDir = normalize(vViewPosition);
+                    
+                    // Fresnel calculation
+                    float fresnel = dot(viewDir, normal);
+                    fresnel = clamp(1.0 - fresnel, 0.0, 1.0);
+                    fresnel = pow(fresnel, 3.0); // Sharpen rim
+                    
+                    // Pulsing core
+                    float pulse = sin(time * 3.0) * 0.5 + 0.5;
+                    
+                    vec3 finalColor = glowColor * fresnel * 2.0;
+                    finalColor += glowColor * pulse * 0.2; // Ambient pulse
+
+                    gl_FragColor = vec4(finalColor, 1.0);
+                }
+            `
+        };
+
+        // ------------------------------------------------------------------
+        // 3. OBJECT GENERATION
+        // ------------------------------------------------------------------
+
+        // GOD RAYS (Cylinders)
+        const rayGeo = new THREE.CylinderGeometry(5, 15, 60, 32, 1, true);
+        const rayMat = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(godRayShader.uniforms),
+            vertexShader: godRayShader.vertexShader,
+            fragmentShader: godRayShader.fragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const godRays = new THREE.Mesh(rayGeo, rayMat);
+        godRays.position.set(0, -10, 0); // Center slightly below surface
+        scene.add(godRays);
+
+        // MARINE SNOW (Particles)
+        const snowCount = 3000;
+        const snowGeo = new THREE.BufferGeometry();
+        const snowPos = [];
+        const snowSpeeds = [];
+        
+        for(let i=0; i<snowCount; i++) {
+            // Distribute in a tall column
+            const x = (Math.random() - 0.5) * 40;
+            const y = (Math.random() * -CONFIG.depth) + 10; // Surface to depth
+            const z = (Math.random() - 0.5) * 40;
+            snowPos.push(x, y, z);
+            snowSpeeds.push(Math.random() * 0.05 + 0.01);
+        }
+        
+        snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
+        const snowMat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.05,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending
+        });
+        const marineSnow = new THREE.Points(snowGeo, snowMat);
+        scene.add(marineSnow);
+
+        // JELLYFISH (Group)
+        const jellies = new THREE.Group();
+        const jellyGeo = new THREE.SphereGeometry(0.5, 32, 16, 0, Math.PI * 2, 0, Math.PI/2); // Dome
+        
+        // Create 10 jellies at different depths
+        for(let i=0; i<15; i++) {
+            const mat = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.clone(jellyShader.uniforms),
+                vertexShader: jellyShader.vertexShader,
+                fragmentShader: jellyShader.fragmentShader,
+                transparent: true,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            // Randomize start time for pulse offset
+            mat.uniforms.time.value = Math.random() * 100;
+            
+            const mesh = new THREE.Mesh(jellyGeo, mat);
+            mesh.position.set(
+                (Math.random() - 0.5) * 20,
+                -(Math.random() * (CONFIG.depth * 0.6) + 20), // Mid-depths
+                (Math.random() - 0.5) * 20
+            );
+            mesh.rotation.x = Math.PI; // Face down
+            mesh.scale.setScalar(Math.random() * 0.5 + 0.5);
+            
+            // Tentacles (Simple Lines)
+            const tentacleGeo = new THREE.BufferGeometry();
+            const tPos = [];
+            for(let t=0; t<20; t++) { // 20 segments
+                tPos.push(0, -t*0.2, 0); 
+            }
+            tentacleGeo.setAttribute('position', new THREE.Float32BufferAttribute(tPos, 3));
+            const tentacleMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
+            
+            // Add 4 tentacles per jelly
+            for(let k=0; k<4; k++) {
+                const tLine = new THREE.Line(tentacleGeo, tentacleMat);
+                tLine.position.set((Math.random()-0.5)*0.4, 0, (Math.random()-0.5)*0.4);
+                mesh.add(tLine);
+            }
+
+            jellies.add(mesh);
+        }
+        scene.add(jellies);
+
+        // THE ARTIFACT (Bottom)
+        const artifactGeo = new THREE.IcosahedronGeometry(2, 0);
+        const artifactMat = new THREE.ShaderMaterial({
+            uniforms: artifactShader.uniforms,
+            vertexShader: artifactShader.vertexShader,
+            fragmentShader: artifactShader.fragmentShader,
+            transparent: true
+        });
+        const artifact = new THREE.Mesh(artifactGeo, artifactMat);
+        artifact.position.set(0, -CONFIG.depth, 0);
+        scene.add(artifact);
+
+        // ARTIFACT LIGHT
+        const artifactLight = new THREE.PointLight(0xff0044, 5, 30);
+        artifactLight.position.set(0, -CONFIG.depth, 0);
+        scene.add(artifactLight);
+
+        // ------------------------------------------------------------------
+        // 4. POST PROCESSING
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        composer.addPass(bloomPass);
+
+        // Custom Grain/Vignette (Copied from V1 & tweaked)
+        const filmShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "time": { value: 0.0 },
+                "grainOpacity": { value: 0.1 },
+                "vignetteDarkness": { value: 0.5 } // Dynamic
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float grainOpacity;
+                uniform float vignetteDarkness;
+                varying vec2 vUv;
+
+                float random(vec2 p) {
+                    return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    vec4 color = texture2D(tDiffuse, vUv);
+                    
+                    // Grain
+                    float noise = (random(vUv * time) - 0.5) * grainOpacity;
+                    color.rgb += noise;
+                    
+                    // Vignette
+                    float dist = distance(vUv, vec2(0.5));
+                    color.rgb *= smoothstep(0.8, 0.2, dist * (vignetteDarkness + 0.5));
+                    
+                    gl_FragColor = color;
+                }
+            `
+        };
+        const filmPass = new ShaderPass(filmShader);
+        composer.addPass(filmPass);
+        
+        const outputPass = new OutputPass();
+        composer.addPass(outputPass);
+
+        // ------------------------------------------------------------------
+        // 5. WEB AUDIO SYSTEM
+        // ------------------------------------------------------------------
+        const audioSystem = {
+            ctx: null,
+            droneOsc: null,
+            droneGain: null,
+            lfo: null,
+            
+            init: function() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                
+                // --- Deep Drone (Sub Bass) ---
+                this.droneOsc = this.ctx.createOscillator();
+                this.droneOsc.type = 'sine';
+                this.droneOsc.frequency.value = 40; // Low rumble
+                
+                this.droneGain = this.ctx.createGain();
+                this.droneGain.gain.value = 0.0; // Start silent
+                
+                // LFO for drone wobble
+                this.lfo = this.ctx.createOscillator();
+                this.lfo.frequency.value = 0.2; // Slow wobble
+                const lfoGain = this.ctx.createGain();
+                lfoGain.gain.value = 10; 
+                this.lfo.connect(lfoGain);
+                lfoGain.connect(this.droneOsc.frequency);
+
+                this.droneOsc.connect(this.droneGain);
+                this.droneGain.connect(this.ctx.destination);
+                
+                this.droneOsc.start();
+                this.lfo.start();
+
+                // Scheduler for random pings
+                this.schedulePings();
+            },
+
+            schedulePings: function() {
+                if(!state.isPlaying) return;
+                
+                const nextTime = Math.random() * 4 + 2; // Every 2-6 sec
+                setTimeout(() => {
+                    this.playPing();
+                    this.schedulePings();
+                }, nextTime * 1000);
+            },
+
+            playPing: function() {
+                if(!this.ctx) return;
+                
+                // Create a "sonar" or "crystalline" ping
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                // Higher freq = more crystalline
+                osc.frequency.value = 800 + Math.random() * 600; 
+                osc.type = 'sine';
+                
+                // Envelope
+                const now = this.ctx.currentTime;
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.1, now + 0.05); // Attack
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 2.0); // Decay
+                
+                // Reverb stub (simple delay)
+                const delay = this.ctx.createDelay();
+                delay.delayTime.value = 0.4;
+                const delayGain = this.ctx.createGain();
+                delayGain.gain.value = 0.3;
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                gain.connect(delay);
+                delay.connect(delayGain);
+                delayGain.connect(this.ctx.destination);
+                delay.connect(delay); // Feedback loop (careful)
+                
+                osc.start(now);
+                osc.stop(now + 3.0);
+            },
+            
+            update: function(depthRatio) {
+                if(!this.ctx) return;
+                
+                // Intensify drone as we go deeper
+                // Depth 0 (surface) -> Gain 0.1
+                // Depth 1 (abyss) -> Gain 0.6
+                // Freq drops: 60Hz -> 30Hz
+                
+                const targetGain = 0.1 + (depthRatio * 0.5);
+                this.droneGain.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.1);
+                
+                const targetFreq = 60 - (depthRatio * 30);
+                this.droneOsc.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.1);
+            },
+
+            stop: function() {
+                if(this.droneGain) {
+                    this.droneGain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 3);
+                }
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // 6. ANIMATION & TIMELINE
+        // ------------------------------------------------------------------
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            state.time = time;
+            
+            // --- UPDATES ---
+            
+            // 1. God Rays (Fade out as we go deep)
+            const depthRatio = Math.abs(camera.position.y) / CONFIG.depth; // 0 to 1
+            state.depthValues.value = depthRatio;
+            
+            godRayShader.uniforms.time.value = time;
+            godRayShader.uniforms.opacity.value = 0.6 * (1.0 - Math.min(depthRatio * 2.0, 1.0)); // Gone by mid-depth
+
+            // 2. Jellyfish Pulse
+            jellies.children.forEach(j => {
+                if(j.isMesh) j.material.uniforms.time.value = time;
+            });
+            // Float jellies up slightly
+            jellies.position.y += Math.sin(time) * 0.01;
+
+            // 3. Marine Snow (Looping)
+            const positions = marineSnow.geometry.attributes.position.array;
+            for(let i=0; i<snowCount; i++) {
+                // Y is at index i*3 + 1
+                positions[i*3 + 1] -= snowSpeeds[i]; // Fall down
+                
+                // If below camera/depth, reset to top relative to camera
+                if(positions[i*3 + 1] < camera.position.y - 20) {
+                    positions[i*3 + 1] = camera.position.y + 20;
+                }
+            }
+            marineSnow.geometry.attributes.position.needsUpdate = true;
+
+            // 4. Artifact Spin
+            artifact.rotation.y = time * 0.2;
+            artifact.rotation.x = time * 0.1;
+            artifactShader.uniforms.time.value = time;
+
+            // 5. Camera Look
+            // Always look down, but add subtle noise
+            camera.lookAt(0, camera.position.y - 20, 0);
+            camera.rotation.z = Math.sin(time * 0.1) * 0.05; // Rolling sway
+
+            // 6. Fog & Color Grading Interpolation
+            // Surface (Blue) -> Abyss (Black)
+            const currentColor = new THREE.Color().lerpColors(CONFIG.colors.surface, CONFIG.colors.abyss, Math.min(depthRatio * 1.5, 1));
+            scene.background = currentColor;
+            scene.fog.color = currentColor;
+            // Fog gets thicker then clears at artifact? No, gets thicker.
+            scene.fog.density = THREE.MathUtils.lerp(CONFIG.colors.fogDensitySurface, CONFIG.colors.fogDensityAbyss, depthRatio);
+            
+            // Update UI HUD
+            document.getElementById('depth-val').innerText = Math.floor(Math.abs(camera.position.y));
+
+            // 7. Audio Update
+            audioSystem.update(depthRatio);
+            
+            // 8. Render
+            filmPass.uniforms.time.value = time;
+            filmPass.uniforms.vignetteDarkness.value = 0.5 + (depthRatio * 0.5); // Darker edges deep down
+            composer.render();
+        }
+
+        // START SEQUENCE
+        const startBtn = document.getElementById('start-prompt');
+        
+        startBtn.addEventListener('click', () => {
+            if(state.isPlaying) return;
+            state.isPlaying = true;
+
+            // Init Audio
+            audioSystem.init();
+
+            // Hide Start UI
+            gsap.to('#ui-layer', { opacity: 0, duration: 1, onComplete: () => {
+                document.getElementById('ui-layer').style.display = 'none';
+                document.getElementById('depth-meter').style.opacity = 1;
+            }});
+
+            // START DESCENT TIMELINE
+            const tl = gsap.timeline();
+            
+            // Phase 1: Descent
+            tl.to(camera.position, {
+                y: -CONFIG.depth + 10, // Stop just above artifact
+                duration: CONFIG.duration,
+                ease: "power1.inOut"
+            });
+            
+            // Phase 2: Hover at bottom (Artifact Reveal)
+            tl.to(camera.position, {
+                y: -CONFIG.depth + 4, // Get closer
+                duration: 5,
+                ease: "power2.out"
+            });
+
+            // Phase 3: Cut to Black & Title
+            tl.call(() => {
+                // Fade out scene
+                gsap.to(filmPass.uniforms.vignetteDarkness, { value: 5.0, duration: 2 }); // Vignette closes in
+                audioSystem.stop();
+            });
+
+            tl.to({}, { duration: 2 }); // Wait for fade
+
+            tl.call(() => {
+                // Show Title
+                const title = document.getElementById('final-title');
+                title.style.opacity = 1;
+                gsap.to('#title-line', { scaleX: 1, duration: 1, ease: "expo.out" });
+            });
+        });
+
+        // RESIZE
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+
+    </script>
+</body>
+</html>

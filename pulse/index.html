@@ -1,0 +1,737 @@
+<!-- 
+    HEARTBREAK INK — SHOWCASE #2: PULSE
+    "Sound Made Physical"
+    
+    Concept: A central sculptural form driven by procedural audio.
+    Authored by: Flux ⚡
+    Date: 2026-02-26
+    
+    TECH STACK:
+    - Three.js r160 (CDN)
+    - Web Audio API (Procedural Soundtrack)
+    - Custom GLSL Shaders (Vertex Displacement)
+    - Post-Processing (Bloom, Grain, Aberration)
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PULSE — Heartbreak Ink Showcase #2</title>
+    <style>
+        /* BASE RESET */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            cursor: pointer; /* Hint interaction */
+        }
+
+        /* CANVAS */
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            mix-blend-mode: difference;
+            color: white;
+            opacity: 0; /* Hidden initially */
+            transition: opacity 2s ease;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .title-block h1 {
+            font-size: 5rem;
+            line-height: 0.9;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            margin: 0;
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 1s ease 0.5s;
+        }
+
+        .status {
+            text-align: right;
+            font-size: 0.7rem;
+            opacity: 0.7;
+            letter-spacing: 0.1em;
+            line-height: 1.5;
+        }
+
+        /* CLICK TO START */
+        #start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            flex-direction: column;
+            transition: opacity 1s ease;
+        }
+        
+        #start-btn {
+            font-size: 1rem;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 20px 40px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: transparent;
+            color: white;
+        }
+        
+        #start-btn:hover {
+            background: white;
+            color: black;
+            border-color: white;
+        }
+        
+        .warn {
+            margin-top: 1rem;
+            font-size: 0.6rem;
+            opacity: 0.5;
+            letter-spacing: 0.1em;
+        }
+
+        /* REVEAL STATE */
+        body.active #ui-layer { opacity: 1; }
+        body.active .title-block h1 { transform: translateY(0); opacity: 1; }
+        
+        .viz-hidden { display: none !important; }
+    </style>
+
+    <!-- IMPORT MAP -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "gsap": "https://unpkg.com/gsap@3.12.5/index.js"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- START SCREEN -->
+    <div id="start-overlay">
+        <button id="start-btn">Initialize Pulse</button>
+        <div class="warn">AUDIO REQUIRED • HEADPHONES RECOMMENDED</div>
+    </div>
+
+    <!-- UI LAYER -->
+    <div id="ui-layer">
+        <div class="header">
+            <span>Showcase #02</span>
+            <span>Flux ⚡</span>
+        </div>
+        <div class="footer">
+            <div class="title-block">
+                <h1>HEARTBREAK<br>INK</h1>
+            </div>
+            <div class="status">
+                Audio Reactive<br>
+                System: Stable<br>
+                BPM: 110
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D CONTAINER -->
+    <div id="canvas-container"></div>
+
+    <!-- MAIN SCRIPT -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import gsap from 'gsap';
+
+        // ------------------------------------------------------------------
+        // AUDIO ENGINE (The Driver)
+        // ------------------------------------------------------------------
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.analyser = null;
+                this.dataArray = null;
+                this.isPlaying = false;
+                
+                // Frequency Bands
+                this.bass = 0;
+                this.mid = 0;
+                this.high = 0;
+            }
+
+            init() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                
+                this.analyser = this.ctx.createAnalyser();
+                this.analyser.fftSize = 2048; // High res
+                this.analyser.smoothingTimeConstant = 0.85;
+                
+                const bufferLength = this.analyser.frequencyBinCount;
+                this.dataArray = new Uint8Array(bufferLength);
+
+                // Master Gain (Volume)
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.8;
+                this.masterGain.connect(this.analyser);
+                this.analyser.connect(this.ctx.destination);
+
+                this.compose();
+                this.isPlaying = true;
+            }
+
+            compose() {
+                const t = this.ctx.currentTime;
+                const bpm = 110;
+                const beat = 60 / bpm;
+                
+                // 1. THE DRONE (Deep Bass Foundation)
+                const drone = this.ctx.createOscillator();
+                const droneGain = this.ctx.createGain();
+                drone.type = 'sine';
+                drone.frequency.value = 55; // A1
+                droneGain.gain.value = 0.3;
+                drone.connect(droneGain);
+                droneGain.connect(this.masterGain);
+                drone.start(t);
+                
+                // LFO for drone modulation
+                const lfo = this.ctx.createOscillator();
+                lfo.frequency.value = 0.1;
+                const lfoGain = this.ctx.createGain();
+                lfoGain.gain.value = 200; // Filter modulation depth
+                lfo.connect(lfoGain);
+                
+                // 2. THE KICK (Procedural Heartbeat)
+                const kickLoop = () => {
+                    const time = this.ctx.currentTime;
+                    // Simple Kick: Sine drop
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    
+                    osc.frequency.setValueAtTime(150, time);
+                    osc.frequency.exponentialRampToValueAtTime(40, time + 0.1);
+                    
+                    gain.gain.setValueAtTime(1, time);
+                    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    
+                    osc.start(time);
+                    osc.stop(time + 0.5);
+                };
+                
+                // 3. HI-HATS / CRYSTALS (High Freq Texture)
+                const hatLoop = () => {
+                    const time = this.ctx.currentTime;
+                    // White noise buffer
+                    const bufferSize = this.ctx.sampleRate * 2.0;
+                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = Math.random() * 2 - 1;
+                    }
+                    
+                    const noise = this.ctx.createBufferSource();
+                    noise.buffer = buffer;
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'highpass';
+                    filter.frequency.value = 5000;
+                    const gain = this.ctx.createGain();
+                    
+                    gain.gain.setValueAtTime(0.1, time);
+                    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+                    
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.masterGain);
+                    noise.start(time);
+                };
+
+                // SEQUENCER (Simple Timer-based)
+                // In a real app, use Tone.js. Here, we hack it with setInterval (drift warning, but fine for demo).
+                // Actually, let's use the WebAudio clock for precision scheduling.
+                
+                const schedule = () => {
+                    // Just a simple loop logic
+                    const now = this.ctx.currentTime;
+                    // We'll let the visual loop handle the triggering based on frame count? 
+                    // No, that's bad sync. Let's just run a heartbeat interval.
+                    
+                    setInterval(() => {
+                        if(this.ctx.state === 'running') {
+                             // Kick on every beat
+                            kickLoop();
+                            
+                            // Hats on offbeats
+                            setTimeout(hatLoop, (beat/2) * 1000);
+                        }
+                    }, beat * 1000);
+                };
+                
+                // Start sequence
+                schedule();
+                
+                // FM SYNTH PAD (The "Alien" Voice) - Arpeggio
+                const arp = () => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    
+                    // Random pentatonic notes
+                    const notes = [220, 261.63, 293.66, 329.63, 392.00]; 
+                    const note = notes[Math.floor(Math.random() * notes.length)];
+                    
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(note, this.ctx.currentTime);
+                    
+                    gain.gain.setValueAtTime(0, this.ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.1, this.ctx.currentTime + 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 2.0);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 2.0);
+                };
+                
+                setInterval(arp, beat * 250); // Fast random arp
+            }
+
+            update() {
+                if (!this.isPlaying) return;
+                
+                this.analyser.getByteFrequencyData(this.dataArray);
+                
+                // Calculate bands
+                const bassEnd = Math.floor(this.dataArray.length * 0.05); // 0-5%
+                const midEnd = Math.floor(this.dataArray.length * 0.25); // 5-25%
+                
+                let bassSum = 0;
+                let midSum = 0;
+                let highSum = 0;
+                
+                for(let i = 0; i < this.dataArray.length; i++) {
+                    if (i < bassEnd) bassSum += this.dataArray[i];
+                    else if (i < midEnd) midSum += this.dataArray[i];
+                    else highSum += this.dataArray[i];
+                }
+                
+                // Normalize 0-1
+                this.bass = bassSum / (bassEnd * 255);
+                this.mid = midSum / ((midEnd - bassEnd) * 255);
+                this.high = highSum / ((this.dataArray.length - midEnd) * 255);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // VISUAL CONFIG
+        // ------------------------------------------------------------------
+        const CONFIG = {
+            colors: {
+                bg: 0x000000,
+                core: 0xff3333, // Heart red
+                rim: 0x00ffff,  // Cyan rim
+            }
+        };
+
+        // ------------------------------------------------------------------
+        // SCENE SETUP
+        // ------------------------------------------------------------------
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.03);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0, 6);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        container.appendChild(renderer.domElement);
+
+        // ------------------------------------------------------------------
+        // THE ALIEN CORE (Custom Shader Material)
+        // ------------------------------------------------------------------
+        const coreGeometry = new THREE.IcosahedronGeometry(1.5, 60); // High detail for displacement
+        
+        const coreMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                uBass: { value: 0 },
+                uMid: { value: 0 },
+                uHigh: { value: 0 },
+                baseColor: { value: new THREE.Color(CONFIG.colors.core) },
+                rimColor: { value: new THREE.Color(CONFIG.colors.rim) }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float uBass;
+                uniform float uMid;
+                
+                varying vec2 vUv;
+                varying float vDisplacement;
+                varying vec3 vNormal;
+                varying vec3 vViewPosition;
+
+                // Simplex Noise (Ashima Arts)
+                vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+                vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+                vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+                vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+                float snoise(vec3 v) {
+                    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+                    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+                    vec3 i  = floor(v + dot(v, C.yyy) );
+                    vec3 x0 = v - i + dot(i, C.xxx) ;
+                    vec3 g = step(x0.yzx, x0.xyz);
+                    vec3 l = 1.0 - g;
+                    vec3 i1 = min( g.xyz, l.zxy );
+                    vec3 i2 = max( g.xyz, l.zxy );
+                    vec3 x1 = x0 - i1 + C.xxx;
+                    vec3 x2 = x0 - i2 + C.yyy;
+                    vec3 x3 = x0 - D.yyy;
+                    i = mod289(i);
+                    vec4 p = permute( permute( permute( 
+                                i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                            + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
+                            + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+                    float n_ = 0.142857142857;
+                    vec3  ns = n_ * D.wyz - D.xzx;
+                    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+                    vec4 x_ = floor(j * ns.z);
+                    vec4 y_ = floor(j - 7.0 * x_ );
+                    vec4 x = x_ *ns.x + ns.yyyy;
+                    vec4 y = y_ *ns.x + ns.yyyy;
+                    vec4 h = 1.0 - abs(x) - abs(y);
+                    vec4 b0 = vec4( x.xy, y.xy );
+                    vec4 b1 = vec4( x.zw, y.zw );
+                    vec4 s0 = floor(b0)*2.0 + 1.0;
+                    vec4 s1 = floor(b1)*2.0 + 1.0;
+                    vec4 sh = -step(h, vec4(0.0));
+                    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+                    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+                    vec3 p0 = vec3(a0.xy,h.x);
+                    vec3 p1 = vec3(a0.zw,h.y);
+                    vec3 p2 = vec3(a1.xy,h.z);
+                    vec3 p3 = vec3(a1.zw,h.w);
+                    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+                    p0 *= norm.x;
+                    p1 *= norm.y;
+                    p2 *= norm.z;
+                    p3 *= norm.w;
+                    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+                    m = m * m;
+                    return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
+                }
+
+                void main() {
+                    vUv = uv;
+                    vNormal = normalize(normalMatrix * normal);
+                    
+                    // Displace based on Bass and Noise
+                    float noiseVal = snoise(position * 2.0 + time * 0.5);
+                    float bassDisplace = uBass * 0.5 * snoise(position * 1.0 + time * 2.0); // Fast pulse
+                    
+                    vec3 newPos = position + normal * (noiseVal * 0.1 + bassDisplace);
+                    vDisplacement = bassDisplace; // Pass to fragment for coloring
+                    
+                    vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
+                    vViewPosition = -mvPosition.xyz;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 baseColor;
+                uniform vec3 rimColor;
+                uniform float uBass;
+                
+                varying float vDisplacement;
+                varying vec3 vNormal;
+                varying vec3 vViewPosition;
+
+                void main() {
+                    // Fresnel calculation
+                    vec3 viewDir = normalize(vViewPosition);
+                    vec3 normal = normalize(vNormal);
+                    float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
+                    
+                    // Mix colors based on displacement energy
+                    vec3 color = mix(baseColor * 0.2, baseColor, vDisplacement * 5.0 + 0.2);
+                    
+                    // Add Fresnel Rim
+                    color += rimColor * fresnel * (uBass * 2.0 + 0.5);
+                    
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+            // wireframe: true
+        });
+
+        const core = new THREE.Mesh(coreGeometry, coreMaterial);
+        scene.add(core);
+
+        // ------------------------------------------------------------------
+        // PARTICLE RING (High Freq Reactor)
+        // ------------------------------------------------------------------
+        const particleCount = 2000;
+        const particleGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const randoms = new Float32Array(particleCount);
+        
+        for(let i=0; i<particleCount; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const r = 2.5 + Math.random() * 2.0; // Radius
+            
+            positions[i*3] = Math.cos(theta) * r;
+            positions[i*3+1] = (Math.random() - 0.5) * 1.0; // Flat disk
+            positions[i*3+2] = Math.sin(theta) * r;
+            
+            randoms[i] = Math.random();
+        }
+        
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particleGeo.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
+        
+        const particleMat = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                uHigh: { value: 0 }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float uHigh;
+                attribute float aRandom;
+                varying float vAlpha;
+                
+                void main() {
+                    vec3 pos = position;
+                    
+                    // Rotate
+                    float angle = time * 0.2 * (1.0 + uHigh);
+                    float s = sin(angle);
+                    float c = cos(angle);
+                    float x = pos.x * c - pos.z * s;
+                    float z = pos.x * s + pos.z * c;
+                    pos.x = x;
+                    pos.z = z;
+                    
+                    // Vertical jitter on highs
+                    pos.y += sin(time * 5.0 + aRandom * 10.0) * uHigh * 0.5;
+                    
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_PointSize = (4.0 * uHigh + 2.0) * (30.0 / -mvPosition.z);
+                    gl_Position = projectionMatrix * mvPosition;
+                    
+                    vAlpha = 0.5 + uHigh * 0.5;
+                }
+            `,
+            fragmentShader: `
+                varying float vAlpha;
+                void main() {
+                    // Circular particle
+                    float r = distance(gl_PointCoord, vec2(0.5));
+                    if (r > 0.5) discard;
+                    
+                    gl_FragColor = vec4(1.0, 1.0, 1.0, vAlpha * (1.0 - r*2.0));
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const particles = new THREE.Points(particleGeo, particleMat);
+        scene.add(particles);
+
+        // ------------------------------------------------------------------
+        // LIGHTING
+        // ------------------------------------------------------------------
+        const ambientLight = new THREE.AmbientLight(0x111111);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xff0000, 100, 20);
+        pointLight.position.set(2, 2, 2);
+        scene.add(pointLight);
+
+        const blueLight = new THREE.PointLight(0x0000ff, 100, 20);
+        blueLight.position.set(-2, -2, 2);
+        scene.add(blueLight);
+
+        // ------------------------------------------------------------------
+        // POST PROCESSING
+        // ------------------------------------------------------------------
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        composer.addPass(bloomPass);
+
+        // Custom "Flux" Post Shader (Grain + Chromatic Aberration)
+        const fluxShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                time: { value: 0 },
+                uBass: { value: 0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float uBass;
+                varying vec2 vUv;
+                
+                float random(vec2 p) { return fract(cos(dot(p, vec2(23.14, 2.66))) * 12345.6); }
+
+                void main() {
+                    // Chromatic Aberration (bass driven)
+                    float shift = uBass * 0.02;
+                    float r = texture2D(tDiffuse, vUv + vec2(shift, 0.0)).r;
+                    float g = texture2D(tDiffuse, vUv).g;
+                    float b = texture2D(tDiffuse, vUv - vec2(shift, 0.0)).b;
+                    
+                    vec3 color = vec3(r, g, b);
+                    
+                    // Grain
+                    float noise = (random(vUv * time) - 0.5) * 0.1;
+                    color += noise;
+                    
+                    // Vignette
+                    float dist = distance(vUv, vec2(0.5));
+                    color *= smoothstep(0.8, 0.2, dist);
+                    
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        };
+        const fluxPass = new ShaderPass(fluxShader);
+        composer.addPass(fluxPass);
+        
+        const outputPass = new OutputPass();
+        composer.addPass(outputPass);
+
+        // ------------------------------------------------------------------
+        // LOOP
+        // ------------------------------------------------------------------
+        const audio = new AudioEngine();
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            audio.update();
+
+            // 1. Sync Uniforms
+            coreMaterial.uniforms.time.value = time;
+            coreMaterial.uniforms.uBass.value = audio.bass; // Beat hits
+            
+            particleMat.uniforms.time.value = time;
+            particleMat.uniforms.uHigh.value = audio.high; // Snare/Hat hits
+
+            fluxPass.uniforms.time.value = time;
+            fluxPass.uniforms.uBass.value = audio.bass;
+
+            // 2. Camera Motion
+            // Orbit slowly + Push in on bass
+            const angle = time * 0.2;
+            const radius = 6 - (audio.bass * 1.5); // Suck in on bass
+            
+            camera.position.x = Math.cos(angle) * radius;
+            camera.position.z = Math.sin(angle) * radius;
+            camera.position.y = Math.sin(time * 0.5) * 1.0;
+            camera.lookAt(0, 0, 0);
+
+            // 3. Light Reactivity
+            pointLight.intensity = 50 + audio.bass * 200;
+            blueLight.intensity = 50 + audio.mid * 200;
+
+            composer.render();
+        }
+
+        // ------------------------------------------------------------------
+        // EVENTS
+        // ------------------------------------------------------------------
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start Button Logic
+        const btn = document.getElementById('start-btn');
+        const overlay = document.getElementById('start-overlay');
+        
+        btn.addEventListener('click', () => {
+            audio.init();
+            
+            // Fade out overlay
+            overlay.style.opacity = 0;
+            setTimeout(() => overlay.style.display = 'none', 1000);
+            
+            // Activate UI
+            document.body.classList.add('active');
+            
+            animate();
+        });
+
+    </script>
+</body>
+</html>

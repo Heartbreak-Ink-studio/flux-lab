@@ -1,628 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HEARTBREAK INK | ARRIVAL [POC]</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Helvetica Neue', Arial, sans-serif; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        
-        #ui-layer {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
-        }
-
-        #title {
-            color: #fff;
-            font-size: 4rem;
-            font-weight: 700;
-            letter-spacing: 0.5em;
-            opacity: 0;
-            text-transform: uppercase;
-            text-shadow: 0 0 20px rgba(255,255,255,0.5);
-            mix-blend-mode: exclusion;
-        }
-
-        #overlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: black;
-            opacity: 1;
-            z-index: 20;
-            transition: opacity 2s ease-out;
-        }
-
-        #loading {
-            position: absolute;
-            bottom: 30px;
-            right: 40px;
-            color: #444;
-            font-size: 10px;
-            letter-spacing: 2px;
-            font-family: monospace;
-        }
-
-        /* Scanline effect for that subtle CRT vibe */
-        .scanlines {
-            background: linear-gradient(
-                to bottom,
-                rgba(255,255,255,0),
-                rgba(255,255,255,0) 50%,
-                rgba(0,0,0,0.1) 50%,
-                rgba(0,0,0,0.1)
-            );
-            background-size: 100% 4px;
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            pointer-events: none;
-            z-index: 5;
-            opacity: 0.3;
-        }
-    </style>
-    <!-- Import Maps for clean module loading -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.4/gsap.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLUX LAB — Heartbreak Ink</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+  }
+  .header {
+    text-align: center;
+    padding: 60px 20px 40px;
+    border-bottom: 1px solid rgba(68, 136, 255, 0.2);
+  }
+  .header h1 {
+    font-size: 2.5rem;
+    letter-spacing: 0.3em;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .header h1 span { color: #4488ff; }
+  .header p {
+    color: #888;
+    font-size: 0.9rem;
+    letter-spacing: 0.15em;
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+    padding: 40px 5%;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(68,136,255,0.15);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.3s, transform 0.3s;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .card:hover {
+    border-color: #4488ff;
+    transform: translateY(-4px);
+  }
+  .card-preview {
+    height: 200px;
+    background: #0d0d18;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .card-preview .glow {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    filter: blur(30px);
+    position: absolute;
+    opacity: 0.6;
+    animation: pulse 3s ease-in-out infinite alternate;
+  }
+  @keyframes pulse {
+    from { transform: scale(0.8); opacity: 0.4; }
+    to { transform: scale(1.2); opacity: 0.7; }
+  }
+  .card-preview .label {
+    position: relative;
+    z-index: 1;
+    font-size: 1.4rem;
+    letter-spacing: 0.25em;
+    color: #fff;
+    font-weight: bold;
+  }
+  .card-body {
+    padding: 16px 20px;
+  }
+  .card-body .desc {
+    font-size: 0.8rem;
+    color: #999;
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  .card-body .meta {
+    font-size: 0.7rem;
+    color: #555;
+  }
+  .card-body .status {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+  }
+  .status.live { background: rgba(0,255,100,0.15); color: #0f6; }
+  .status.broken { background: rgba(255,50,50,0.15); color: #f55; }
+  .footer {
+    text-align: center;
+    padding: 40px 20px;
+    color: #333;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+  }
+</style>
 </head>
 <body>
-    <div id="overlay"></div>
-    <div id="ui-layer">
-        <h1 id="title">HEARTBREAK INK</h1>
+
+<div class="header">
+  <h1><span>FLUX</span> LAB</h1>
+  <p>HEARTBREAK INK — 3D CINEMATIC SHOWCASES</p>
+</div>
+
+<div class="gallery" id="gallery"></div>
+
+<div class="footer">HEARTBREAK INK © 2026 — POWERED BY FLUX ⚡</div>
+
+<script>
+const pieces = [
+  { name: "ECHOES", path: "echoes/", desc: "Lone figure, orbiting light shards, obsidian void", date: "2026-02-26", color: "#4488ff", status: "live" },
+  { name: "SOLILOQUY", path: "soliloquy/", desc: "Solo figure, dramatic lighting, cinematic letterboxing", date: "2026-02-26", color: "#ff6633", status: "live" },
+  { name: "GENESIS", path: "genesis/", desc: "Creation — particle birth from nothing", date: "2026-02-26", color: "#44ff88", status: "live" },
+  { name: "DEEP v2", path: "deep-v2/", desc: "Deep ocean, bioluminescent rebuild", date: "2026-02-26", color: "#00ccff", status: "live" },
+  { name: "PULSE", path: "pulse/", desc: "Beating heart — energy sphere", date: "2026-02-25", color: "#ff4466", status: "live" },
+  { name: "VOID", path: "void/", desc: "Monolith in the void — first Flux piece", date: "2026-02-25", color: "#8844ff", status: "live" },
+  { name: "FRACTURE", path: "fracture/", desc: "Shattered geometry", date: "2026-02-25", color: "#ff8833", status: "broken" },
+];
+
+const gallery = document.getElementById('gallery');
+pieces.forEach(p => {
+  const a = document.createElement('a');
+  a.className = 'card';
+  a.href = p.path;
+  a.innerHTML = `
+    <div class="card-preview">
+      <div class="glow" style="background:${p.color}"></div>
+      <span class="label">${p.name}</span>
     </div>
-    <div class="scanlines"></div>
-    <div id="loading">INITIALIZING RENDER PROTOCOLS...</div>
-
-    <script type="module">
-        import * as THREE from 'three';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-        import { Reflector } from 'three/addons/objects/Reflector.js';
-
-        // --- FLUX CONFIGURATION ---
-        const CONFIG = {
-            duration: 30, // seconds
-            monolithColor: 0x111111, // Dark chrome
-            floorSize: 100,
-            noiseScale: 0.5,
-            audioEnabled: true
-        };
-
-        // --- SCENE SETUP ---
-        const scene = new THREE.Scene();
-        // Cinematic fog - deep, mysterious, hiding the horizon
-        scene.fog = new THREE.FogExp2(0x050505, 0.02);
-
-        const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
-        // Initial camera position - low angle, looking up slightly
-        camera.position.set(0, 2, 12);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        
-        // [QUICK WIN #1] ACES Filmic Tone Mapping
-        // This crushes blacks and desaturates highlights for a film-like response curve.
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(renderer.domElement);
-
-        // --- PROCEDURAL ENV MAP (FAKE HDRI) ---
-        // [QUICK WIN #2] Procedural Environment Lighting
-        // We create a separate scene with gradients and lights, render it to a PMREM, and use it as envMap.
-        function createEnvironment() {
-            const envScene = new THREE.Scene();
-            
-            // Base ambient light for the map
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);
-            envScene.add(hemiLight);
-
-            // Bright spots for reflections (Softboxes)
-            const light1 = new THREE.Mesh(
-                new THREE.BoxGeometry(10, 10, 1),
-                new THREE.MeshBasicMaterial({ color: 0xffffff })
-            );
-            light1.position.set(10, 10, 10);
-            light1.lookAt(0, 0, 0);
-            envScene.add(light1);
-
-            const light2 = new THREE.Mesh(
-                new THREE.BoxGeometry(10, 10, 1),
-                new THREE.MeshBasicMaterial({ color: 0x4060ff }) // Cool rim light
-            );
-            light2.position.set(-10, 5, -10);
-            light2.lookAt(0, 0, 0);
-            envScene.add(light2);
-
-            const pmremGenerator = new THREE.PMREMGenerator(renderer);
-            pmremGenerator.compileEquirectangularShader();
-            
-            const generatedEnvMap = pmremGenerator.fromScene(envScene).texture;
-            
-            // Clean up
-            // pmremGenerator.dispose(); // Keep it alive if we need dynamic updates, but we'll static bake for now.
-            
-            return generatedEnvMap;
-        }
-
-        const envMap = createEnvironment();
-        scene.environment = envMap;
-        scene.background = new THREE.Color(0x050505); // Dark background matching fog
-
-        // --- ASSETS ---
-
-        // 1. THE MONOLITH
-        // Needs to look expensive. High metalness, low roughness to catch that envMap.
-        const monolithGeo = new THREE.BoxGeometry(1, 6, 1);
-        // Bevel the edges slightly (cheap bevel via normal map or actually geometry? Let's use geometry for silhouette)
-        // Actually, let's use a chamfered box if possible, or just a simple box for the "2001" vibe.
-        // Let's stick to simple sleek box but with high poly count for lighting quality if needed.
-        
-        const monolithMat = new THREE.MeshStandardMaterial({
-            color: CONFIG.monolithColor,
-            metalness: 1.0,
-            roughness: 0.1, // Sharp reflections
-            envMap: envMap,
-            envMapIntensity: 1.5
-        });
-        const monolith = new THREE.Mesh(monolithGeo, monolithMat);
-        monolith.castShadow = true;
-        monolith.receiveShadow = true;
-        monolith.position.y = 10; // Start high
-        monolith.rotation.y = Math.PI / 4;
-        scene.add(monolith);
-
-        // Monolith Core (for the split effect)
-        // Hidden inside initially.
-        const coreGeo = new THREE.BoxGeometry(0.8, 5.8, 0.8);
-        const coreMat = new THREE.MeshBasicMaterial({ 
-            color: 0xffffff,
-            toneMapped: false // Super bright, blows out bloom
-        });
-        const core = new THREE.Mesh(coreGeo, coreMat);
-        monolith.add(core); // Child of monolith
-        core.scale.set(0, 1, 0); // Hidden
-
-        // 2. THE REFLECTIVE FLOOR
-        // Using Reflector for real-time planar reflections
-        // Note: Reflector can be heavy, but it's essential for "expensive" look.
-        const floorGeo = new THREE.PlaneGeometry(CONFIG.floorSize, CONFIG.floorSize);
-        const floormirror = new Reflector(floorGeo, {
-            clipBias: 0.003,
-            textureWidth: window.innerWidth * window.devicePixelRatio,
-            textureHeight: window.innerHeight * window.devicePixelRatio,
-            color: 0x333333 // Dark mirror
-        });
-        floormirror.rotation.x = -Math.PI / 2;
-        floormirror.position.y = 0;
-        scene.add(floormirror);
-
-        // Add a transparent grid/floor overlay for texture so it's not just a perfect mirror
-        const gridHelper = new THREE.GridHelper(50, 50, 0x333333, 0x111111);
-        gridHelper.position.y = 0.01;
-        scene.add(gridHelper);
-
-        // 3. RIPPLE EFFECT (Shockwave)
-        const rippleGeo = new THREE.RingGeometry(0.1, 0.5, 64);
-        const rippleMat = new THREE.MeshBasicMaterial({ 
-            color: 0xffffff, 
-            transparent: true, 
-            opacity: 0,
-            side: THREE.DoubleSide
-        });
-        const ripple = new THREE.Mesh(rippleGeo, rippleMat);
-        ripple.rotation.x = -Math.PI / 2;
-        ripple.position.y = 0.02;
-        scene.add(ripple);
-
-        // 4. FLOATING DEBRIS
-        const debrisCount = 50;
-        const debrisGeo = new THREE.TetrahedronGeometry(0.05, 0);
-        const debrisMat = new THREE.MeshStandardMaterial({
-            color: 0x888888,
-            metalness: 0.9,
-            roughness: 0.2
-        });
-        const debrisGroup = new THREE.Group();
-        for(let i=0; i<debrisCount; i++) {
-            const mesh = new THREE.Mesh(debrisGeo, debrisMat);
-            const radius = 2 + Math.random() * 3;
-            const theta = Math.random() * Math.PI * 2;
-            const y = 1 + Math.random() * 4;
-            
-            mesh.position.set(
-                radius * Math.cos(theta),
-                y,
-                radius * Math.sin(theta)
-            );
-            
-            // Store random rotation speed
-            mesh.userData = {
-                rotSpeed: (Math.random() - 0.5) * 0.05,
-                orbitSpeed: (Math.random() * 0.2) + 0.1,
-                initialAngle: theta,
-                radius: radius
-            };
-            debrisGroup.add(mesh);
-        }
-        scene.add(debrisGroup);
-
-        // --- LIGHTING ---
-        
-        // Key light (warm)
-        const spotLight = new THREE.SpotLight(0xffaa55, 1000); // High intensity for ACES
-        spotLight.position.set(5, 10, 5);
-        spotLight.angle = Math.PI / 6;
-        spotLight.penumbra = 0.5;
-        spotLight.castShadow = true;
-        scene.add(spotLight);
-
-        // Rim light (cool)
-        const rimLight = new THREE.SpotLight(0x4455ff, 800);
-        rimLight.position.set(-5, 8, -5);
-        scene.add(rimLight);
-
-        // Core light (for the split)
-        const coreLight = new THREE.PointLight(0xffffff, 0, 10);
-        coreLight.position.set(0, 3, 0);
-        scene.add(coreLight);
-
-        // --- POST PROCESSING ---
-        const composer = new EffectComposer(renderer);
-        const renderPass = new RenderPass(scene, camera);
-        composer.addPass(renderPass);
-
-        // Bloom for that "glow" when the core opens
-        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0.8; // Only very bright things glow
-        bloomPass.strength = 1.2;
-        bloomPass.radius = 0.5;
-        composer.addPass(bloomPass);
-
-        // [QUICK WIN #3] Custom Film Grain + Vignette Shader
-        const FilmShader = {
-            uniforms: {
-                "tDiffuse": { value: null },
-                "time": { value: 0.0 },
-                "nIntensity": { value: 0.2 },
-                "sIntensity": { value: 0.05 },
-                "sCount": { value: 4096 },
-                "grayscale": { value: 0 }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-                }
-            `,
-            fragmentShader: `
-                uniform float time;
-                uniform float nIntensity;
-                uniform float sIntensity;
-                uniform float sCount;
-                uniform sampler2D tDiffuse;
-                varying vec2 vUv;
-
-                // Simple S-curve for contrast (must be declared before main)
-                float curve(float x) {
-                    return x * x * (3.0 - 2.0 * x);
-                }
-
-                void main() {
-                    vec4 cTextureScreen = texture2D( tDiffuse, vUv );
-                    
-                    // Vignette
-                    float dist = distance(vUv, vec2(0.5, 0.5));
-                    cTextureScreen.rgb *= (1.0 - dist * 0.8);
-
-                    // Film Grain (Noise)
-                    float x = vUv.x * vUv.y * time *  1000.0;
-                    x = mod( x, 13.0 ) * mod( x, 123.0 );
-                    float dx = mod( x, 0.01 );
-                    vec3 cResult = cTextureScreen.rgb + cTextureScreen.rgb * clamp( 0.1 + dx * 100.0, 0.0, 1.0 );
-                    vec2 sc = vec2( sin( vUv.y * sCount ), cos( vUv.y * sCount ) );
-                    cResult += cTextureScreen.rgb * vec3( sc.x, sc.y, sc.x ) * sIntensity;
-                    cResult = cTextureScreen.rgb + clamp(nIntensity, 0.0,1.0 ) * (cResult - cTextureScreen.rgb);
-                    
-                    // Slight color grading (Teal/Orange push)
-                    cResult.r = curve(cResult.r);
-                    cResult.g = curve(cResult.g);
-                    cResult.b = curve(cResult.b) * 1.1; // Blue tint
-
-                    gl_FragColor =  vec4( cResult, cTextureScreen.a );
-                }
-            `
-        };
-
-        const filmPass = new ShaderPass(FilmShader);
-        filmPass.renderToScreen = true;
-        composer.addPass(filmPass);
-
-        // --- ANIMATION SEQUENCE (GSAP) ---
-        
-        // Timeline
-        const tl = gsap.timeline({
-            onComplete: () => {
-                console.log("SEQUENCE COMPLETE");
-            }
-        });
-
-        // 0s: Fade in overlay
-        gsap.to("#overlay", { opacity: 0, duration: 2, delay: 0.5 });
-        gsap.to("#loading", { opacity: 0, duration: 1, delay: 0 });
-
-        // 0s - 5s: Descent
-        tl.to(monolith.position, { 
-            y: 3, 
-            duration: 5, 
-            ease: "power2.inOut" 
-        }, 0);
-        
-        tl.to(monolith.rotation, { 
-            y: Math.PI, 
-            duration: 10, 
-            ease: "none" 
-        }, 0);
-
-        // 5s: Impact
-        tl.call(() => {
-            playAudio("impact");
-            shakeCamera(0.5);
-        }, null, 5);
-
-        tl.to(monolith.position, {
-            y: 3, // Holds (it hovers slightly above floor actually, let's make it land)
-            // Correction: It lands. 
-            y: 3, // Half height is 3, so y=3 puts it on the floor (y=0)
-            duration: 0.2,
-            ease: "bounce.out"
-        }, 5);
-
-        // Ripple Effect
-        tl.to(ripple.scale, { x: 50, y: 50, duration: 2, ease: "power1.out" }, 5);
-        tl.to(rippleMat, { opacity: 0.8, duration: 0.1 }, 5);
-        tl.to(rippleMat, { opacity: 0, duration: 1.5 }, 5.1);
-
-        // 5s - 20s: Orbit & Tension
-        // Camera move handles separately in render loop, but we can animate target
-        
-        // 20s: The Split
-        // Split monolith logic: We can't actually split geometry easily without morph targets or multiple meshes.
-        // Cheat: Scale the Monolith geometry on X/Z or use two halves.
-        // Let's swap the mesh to two halves? Or just scale width up wildly while core stays thin?
-        // Simpler visual: The monolith scales WIDE (stretching), revealing the core because the core doesn't scale.
-        // Wait, if monolith is a box, scaling X makes it wider.
-        // Let's do a "Glitch Split": Scale X rapidly, transparency flickers.
-        // Better: Scale X of the outer shell, Core scales X up from 0 to 1.
-        
-        tl.to(monolith.scale, { x: 1.5, z: 1.5, duration: 0.1, ease: "elastic.out(1, 0.3)" }, 22); // Pulse warning
-        tl.to(monolith.scale, { x: 1, z: 1, duration: 0.5 }, 22.1);
-        
-        tl.call(() => playAudio("charge"), null, 20);
-
-        // 25s: SPLIT OPEN
-        tl.to(monolith.scale, { x: 3, duration: 0.2, ease: "power4.in" }, 25); // Shell expands
-        tl.to(core.scale, { x: 1.2, z: 1.2, y: 1, duration: 0.1 }, 25); // Core appears
-        tl.to(coreMat.color, { r: 10, g: 10, b: 20, duration: 0.1 }, 25); // Super bright emissive
-        tl.to(coreLight, { intensity: 50, duration: 0.1 }, 25);
-        tl.to(bloomPass, { strength: 4.0, radius: 1, duration: 0.2 }, 25);
-        
-        tl.call(() => {
-            playAudio("split");
-            shakeCamera(2.0);
-        }, null, 25);
-
-        // 27s: Fade to Black
-        tl.to("#overlay", { opacity: 1, duration: 0.5 }, 27);
-
-        // 28s: Text Reveal
-        tl.to("#title", { opacity: 1, duration: 2, ease: "power2.out" }, 28);
-
-
-        // --- AUDIO SYSTEM (Web Audio API) ---
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Simple oscillator synth for drone/sfx
-        function playAudio(type) {
-            if (!CONFIG.audioEnabled) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            const filter = audioCtx.createBiquadFilter();
-
-            osc.connect(filter);
-            filter.connect(gain);
-            gain.connect(audioCtx.destination);
-
-            const now = audioCtx.currentTime;
-
-            if (type === "drone") {
-                // Low pulsing drone
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(55, now); // A1
-                
-                filter.type = 'lowpass';
-                filter.frequency.setValueAtTime(200, now);
-                filter.Q.value = 5;
-
-                // LFO for filter
-                const lfo = audioCtx.createOscillator();
-                lfo.frequency.value = 0.2;
-                const lfoGain = audioCtx.createGain();
-                lfoGain.gain.value = 100;
-                lfo.connect(lfoGain);
-                lfoGain.connect(filter.frequency);
-                lfo.start();
-
-                gain.gain.setValueAtTime(0.05, now);
-                gain.gain.linearRampToValueAtTime(0.05, now + 30);
-                
-                osc.start();
-                osc.stop(now + 30);
-            }
-            else if (type === "impact") {
-                // Deep thud
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(150, now);
-                osc.frequency.exponentialRampToValueAtTime(40, now + 0.5);
-                
-                gain.gain.setValueAtTime(0.5, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.5);
-
-                osc.start();
-                osc.stop(now + 1.5);
-            }
-            else if (type === "charge") {
-                // Rising tension
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(100, now);
-                osc.frequency.exponentialRampToValueAtTime(880, now + 5);
-                
-                gain.gain.setValueAtTime(0.05, now);
-                gain.gain.linearRampToValueAtTime(0.2, now + 5);
-
-                osc.start();
-                osc.stop(now + 5);
-            }
-            else if (type === "split") {
-                // High pitch shatter + noise
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(440, now);
-                osc.frequency.exponentialRampToValueAtTime(50, now + 0.5);
-                
-                gain.gain.setValueAtTime(0.3, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-                
-                // Add noise buffer for crash
-                const bufferSize = audioCtx.sampleRate * 2;
-                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = Math.random() * 2 - 1;
-                }
-                const noise = audioCtx.createBufferSource();
-                noise.buffer = buffer;
-                const noiseGain = audioCtx.createGain();
-                noiseGain.gain.setValueAtTime(0.5, now);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 2);
-                noise.connect(noiseGain);
-                noiseGain.connect(audioCtx.destination);
-                noise.start();
-
-                osc.start();
-                osc.stop(now + 0.5);
-            }
-        }
-
-        // Start Drone immediately (user interaction usually required, but this is auto-play attempt)
-        document.addEventListener('click', () => {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            playAudio("drone");
-        }, { once: true });
-        // Try to start automatically
-        setTimeout(() => playAudio("drone"), 100);
-
-        // --- CAMERA ANIMATION LOOP ---
-        // [QUICK WIN #4] Camera Damping
-        // We calculate target position and lerp current position towards it.
-        const cursor = { x: 0, y: 0 };
-        const targetCamPos = new THREE.Vector3();
-        let shakeIntensity = 0;
-
-        function shakeCamera(amount) {
-            shakeIntensity = amount;
-        }
-
-        // Mouse interaction for subtle parallax
-        document.addEventListener('mousemove', (e) => {
-            cursor.x = (e.clientX / window.innerWidth) - 0.5;
-            cursor.y = (e.clientY / window.innerHeight) - 0.5;
-        });
-
-        // The Clock
-        const clock = new THREE.Clock();
-
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            const time = clock.getElapsedTime();
-            // const delta = clock.getDelta(); // Not using delta for everything to keep it simple
-
-            // 1. Orbit Logic
-            // Slowly rotate camera around center
-            const radius = 14;
-            const speed = 0.2;
-            const angle = time * speed;
-            
-            // Calculate IDEAL position based on time + mouse
-            const targetX = Math.sin(angle) * radius + (cursor.x * 2);
-            const targetZ = Math.cos(angle) * radius + (cursor.y * 2);
-            const targetY = 4 + Math.sin(time * 0.5) * 2 - (cursor.y * 2); // Bobbing
-
-            targetCamPos.set(targetX, targetY, targetZ);
-
-            // 2. Damping (Lerp)
-            // Never set position directly. Always lerp.
-            camera.position.lerp(targetCamPos, 0.05);
-            
-            // 3. Shake
-            if (shakeIntensity > 0) {
-                camera.position.x += (Math.random() - 0.5) * shakeIntensity;
-                camera.position.y += (Math.random() - 0.5) * shakeIntensity;
-                camera.position.z += (Math.random() - 0.5) * shakeIntensity;
-                shakeIntensity *= 0.9; // Decay
-            }
-
-            camera.lookAt(0, 4, 0); // Always look at Monolith center
-
-            // Debris Animation
-            debrisGroup.children.forEach((mesh, i) => {
-                mesh.rotation.x += mesh.userData.rotSpeed;
-                mesh.rotation.y += mesh.userData.rotSpeed;
-                
-                // Orbit
-                const dAngle = time * mesh.userData.orbitSpeed + mesh.userData.initialAngle;
-                mesh.position.x = Math.cos(dAngle) * mesh.userData.radius;
-                mesh.position.z = Math.sin(dAngle) * mesh.userData.radius;
-                // Float
-                mesh.position.y = 5 + Math.sin(time + i) * 2;
-            });
-
-            // Shader Updates
-            filmPass.uniforms.time.value = time;
-
-            // Render
-            composer.render();
-        }
-
-        // Handle Resize
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        animate();
-        console.log("RENDER LOOP INITIALIZED");
-
-    </script>
+    <div class="card-body">
+      <div class="desc">${p.desc}</div>
+      <div class="meta">${p.date}<span class="status ${p.status}">${p.status === 'live' ? '● LIVE' : '● BROKEN'}</span></div>
+    </div>`;
+  gallery.appendChild(a);
+});
+</script>
 </body>
 </html>
