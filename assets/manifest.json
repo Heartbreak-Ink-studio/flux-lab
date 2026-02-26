@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-02-26T23:53:00Z",
+  "assets": [
+    {
+      "name": "soldier-main",
+      "type": "character-gltf",
+      "url": "https://threejs.org/examples/models/gltf/Soldier.glb",
+      "source": "threejs-examples",
+      "license": "MIT",
+      "fileSize": "~1.2MB",
+      "tags": ["character", "soldier", "humanoid", "rigged"],
+      "previewUrl": "https://threejs.org/examples/models/gltf/Soldier.glb"
+    },
+    {
+      "name": "suburb-block-a",
+      "type": "environment-gltf",
+      "url": "./assets/environments/suburb-block-a.glb",
+      "source": "vault-placeholder",
+      "license": "TBD",
+      "fileSize": "TBD",
+      "tags": ["environment", "suburb", "street"],
+      "previewUrl": "./assets/environments/previews/suburb-block-a.jpg"
+    },
+    {
+      "name": "golden-hour-hdri",
+      "type": "hdri",
+      "url": "./assets/hdri/golden-hour-01.hdr",
+      "source": "vault-placeholder",
+      "license": "CC0",
+      "fileSize": "TBD",
+      "tags": ["hdri", "sunset", "outdoor"],
+      "previewUrl": "./assets/hdri/previews/golden-hour-01.jpg"
+    },
+    {
+      "name": "asphalt-pbr",
+      "type": "pbr-texture-set",
+      "url": "./assets/textures/asphalt/",
+      "source": "vault-placeholder",
+      "license": "CC0",
+      "fileSize": "TBD",
+      "tags": ["pbr", "road", "asphalt"],
+      "previewUrl": "./assets/textures/asphalt/preview.jpg",
+      "textures": {
+        "albedo": "./assets/textures/asphalt/albedo.jpg",
+        "normal": "./assets/textures/asphalt/normal.jpg",
+        "roughness": "./assets/textures/asphalt/roughness.jpg",
+        "metalness": "./assets/textures/asphalt/metalness.jpg",
+        "ao": "./assets/textures/asphalt/ao.jpg"
+      }
+    },
+    {
+      "name": "soldier-walk-clip",
+      "type": "animation-gltf",
+      "url": "./assets/characters/animations/soldier-walk.glb",
+      "source": "mixamo-placeholder",
+      "license": "Mixamo",
+      "fileSize": "TBD",
+      "tags": ["animation", "walk", "soldier"],
+      "previewUrl": "./assets/characters/animations/previews/soldier-walk.jpg"
+    }
+  ]
+}

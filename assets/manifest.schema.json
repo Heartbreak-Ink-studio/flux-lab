@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heartbreak-ink-studio.github.io/flux-lab/assets/manifest.schema.json",
+  "title": "Flux Asset Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "assets"],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assetEntry" }
+    }
+  },
+  "$defs": {
+    "assetEntry": {
+      "type": "object",
+      "required": ["name", "type", "url"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": [
+            "character-gltf",
+            "environment-gltf",
+            "animation-gltf",
+            "hdri",
+            "pbr-texture-set"
+          ]
+        },
+        "url": { "type": "string", "minLength": 1 },
+        "source": { "type": "string" },
+        "license": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "previewUrl": { "type": "string" },
+        "textures": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "pbr-texture-set" } } },
+          "then": {
+            "required": ["textures"],
+            "properties": {
+              "textures": {
+                "required": ["albedo", "normal", "roughness", "metalness", "ao"]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
