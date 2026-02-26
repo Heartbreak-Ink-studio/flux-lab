@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECHOES | Heartbreak Ink</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0a0a12;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #title {
+            position: absolute;
+            top: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 4rem;
+            color: white;
+            letter-spacing: 0.5rem;
+            opacity: 0; /* Handled by GSAP */
+            font-weight: 300;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+        #watermark {
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            color: white;
+            opacity: 0.3;
+            font-size: 0.8rem;
+            letter-spacing: 0.1rem;
+        }
+        #loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #4488ff;
+            font-size: 0.8rem;
+            letter-spacing: 0.2rem;
+            transition: opacity 0.5s ease;
+        }
+    </style>
+    <!-- GSAP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="title">ECHOES</div>
+        <div id="watermark">HEARTBREAK INK // FLUX</div>
+        <div id="loader">INITIALIZING REALITY...</div>
+    </div>
+
+    <!-- Import Map -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+        // --- CONFIGURATION ---
+        const CONFIG = {
+            colors: {
+                bg: 0x0a0a12,
+                key: 0x4488ff,
+                fill: 0xff6633,
+                rim: 0xffffff,
+                ground: 0x0a0a12
+            },
+            bloom: {
+                strength: 0.8,
+                radius: 0.4,
+                threshold: 0.2
+            },
+            fog: {
+                density: 0.08
+            },
+            camera: {
+                radius: 4,
+                height: 1.5,
+                speed: 1 / 60 // rev per sec (very slow)
+            }
+        };
+
+        // --- STATE ---
+        let scene, camera, renderer, composer;
+        let controls;
+        let clock = new THREE.Clock();
+        let mixer; // AnimationMixer for character
+        const shards = []; // Array to store shard objects
+        const dustParticles = []; // Array for dust
+        let bloomPass;
+        let filmGrainPass;
+        
+        // --- FILM GRAIN SHADER ---
+        const FilmGrainShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "time": { value: 0.0 },
+                "nIntensity": { value: 0.15 },
+                "sIntensity": { value: 0.05 },
+                "grayscale": { value: 0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float nIntensity;
+                uniform float sIntensity;
+                uniform float grayscale;
+                uniform sampler2D tDiffuse;
+                varying vec2 vUv;
+                
+                float rand(vec2 co) {
+                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    vec4 cTextureScreen = texture2D( tDiffuse, vUv );
+                    float x = vUv.x * vUv.y * time *  1000.0;
+                    x = mod( x, 13.0 ) * mod( x, 123.0 );
+                    float dx = mod( x, 0.01 );
+                    
+                    vec3 cResult = cTextureScreen.rgb + cTextureScreen.rgb * clamp( 0.1 + dx * 100.0, 0.0, 1.0 );
+                    vec2 sc = vec2( sin( vUv.y * sIntensity ), cos( vUv.y * sIntensity ) );
+                    cResult += cTextureScreen.rgb * vec3( sc.x, sc.y, sc.x ) * sIntensity;
+                    cResult = cTextureScreen.rgb + clamp( nIntensity, 0.0,1.0 ) * ( cResult - cTextureScreen.rgb );
+                    
+                    if( grayscale > 0.5 ) {
+                        float cGray = dot(cResult, vec3(0.3, 0.59, 0.11));
+                        gl_FragColor =  vec4(cGray, cGray, cGray, cTextureScreen.a);
+                    } else {
+                        gl_FragColor =  vec4(cResult, cTextureScreen.a);
+                    }
+                }
+            `
+        };
+
+        // --- INIT ---
+        function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(CONFIG.colors.bg);
+            scene.fog = new THREE.FogExp2(CONFIG.colors.bg, CONFIG.fog.density);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.5, 5);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Controls (User can interact, but auto-orbit handles main movement)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
+            controls.minDistance = 2;
+            controls.maxDistance = 8;
+
+            // --- LIGHTING (HBI Signature) ---
+            
+            // Key Light (Cool Blue)
+            const keyLight = new THREE.SpotLight(CONFIG.colors.key, 20);
+            keyLight.position.set(3, 4, 3);
+            keyLight.castShadow = true;
+            keyLight.shadow.bias = -0.0001;
+            keyLight.shadow.mapSize.width = 2048;
+            keyLight.shadow.mapSize.height = 2048;
+            scene.add(keyLight);
+
+            // Fill Light (Warm Orange)
+            const fillLight = new THREE.PointLight(CONFIG.colors.fill, 5);
+            fillLight.position.set(-3, 2, 3);
+            scene.add(fillLight);
+
+            // Rim Light (Bright White)
+            const rimLight = new THREE.SpotLight(CONFIG.colors.rim, 15);
+            rimLight.position.set(0, 4, -4);
+            rimLight.lookAt(0, 1, 0);
+            scene.add(rimLight);
+
+            // Ambient (Subtle base)
+            const ambientLight = new THREE.AmbientLight(CONFIG.colors.bg, 0.5);
+            scene.add(ambientLight);
+
+            // --- OBJECTS ---
+
+            // Ground Plane (Reflective Obsidian)
+            const groundGeo = new THREE.PlaneGeometry(50, 50);
+            const groundMat = new THREE.MeshStandardMaterial({
+                color: CONFIG.colors.ground,
+                metalness: 0.85,
+                roughness: 0.15,
+                envMapIntensity: 1.0
+            });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Helper Grid (optional, keeping it clean for now, removed)
+
+            // Load Avatar
+            const loader = new GLTFLoader();
+            loader.load(
+                'https://models.readyplayer.me/64f1a7143f2f95f8cfc4f0b5.glb',
+                (gltf) => {
+                    const avatar = gltf.scene;
+                    avatar.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                    scene.add(avatar);
+                    
+                    // Hide loader
+                    const loaderEl = document.getElementById('loader');
+                    if(loaderEl) loaderEl.style.opacity = 0;
+
+                    // Initialize Animation Mixer if animations exist (default idle usually plays if embedded, otherwise static pose is fine for this mood)
+                    mixer = new THREE.AnimationMixer(avatar);
+                },
+                undefined,
+                (error) => console.error('An error happened loading the avatar:', error)
+            );
+
+            // Geometric Shards
+            createShards();
+
+            // Dust Particles
+            createDust();
+
+            // --- POST PROCESSING ---
+            composer = new EffectComposer(renderer);
+
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                CONFIG.bloom.strength,
+                CONFIG.bloom.radius,
+                CONFIG.bloom.threshold
+            );
+            composer.addPass(bloomPass);
+
+            filmGrainPass = new ShaderPass(FilmGrainShader);
+            filmGrainPass.uniforms["nIntensity"].value = 0.15; // Noise intensity
+            filmGrainPass.uniforms["sIntensity"].value = 0.0;  // Scanline intensity (disabled)
+            filmGrainPass.uniforms["grayscale"].value = 0;
+            composer.addPass(filmGrainPass);
+
+            // --- ANIMATION START ---
+            animateTitle();
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        // --- HELPERS ---
+
+        function createShards() {
+            const shardCount = 10;
+            const colors = [0x4488ff, 0xff6633, 0xffffff]; // Key, Fill, Rim colors for shards
+
+            for (let i = 0; i < shardCount; i++) {
+                // Thin elongated box
+                const width = Math.random() * 0.05 + 0.02;
+                const height = Math.random() * 1.5 + 0.5; // Long vertical shards
+                const depth = Math.random() * 0.05 + 0.02;
+                
+                const geo = new THREE.BoxGeometry(width, height, depth);
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                
+                const mat = new THREE.MeshStandardMaterial({
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 2.0,
+                    metalness: 0.9,
+                    roughness: 0.1
+                });
+
+                const mesh = new THREE.Mesh(geo, mat);
+                
+                // Random starting position on a cylinder
+                const angle = (i / shardCount) * Math.PI * 2 + (Math.random() * 0.5);
+                const radius = 1.5 + Math.random() * 2.0;
+                const y = 0.5 + Math.random() * 2.0;
+
+                mesh.position.set(
+                    Math.cos(angle) * radius,
+                    y,
+                    Math.sin(angle) * radius
+                );
+
+                // Store custom data for animation
+                mesh.userData = {
+                    orbitSpeed: (Math.random() - 0.5) * 0.3, // Rads per second
+                    orbitRadius: radius,
+                    angle: angle,
+                    bobSpeed: 1.0 + Math.random() * 2.0,
+                    bobOffset: Math.random() * Math.PI,
+                    rotSpeedX: (Math.random() - 0.5) * 1.0,
+                    rotSpeedY: (Math.random() - 0.5) * 1.0,
+                    baseY: y
+                };
+
+                scene.add(mesh);
+                shards.push(mesh);
+            }
+        }
+
+        function createDust() {
+            const particleCount = 250;
+            const geo = new THREE.BufferGeometry();
+            const posArray = new Float32Array(particleCount * 3);
+            const randomArray = new Float32Array(particleCount); // For phase offset
+
+            for(let i = 0; i < particleCount * 3; i+=3) {
+                // Spread particles in a volume around the center
+                posArray[i] = (Math.random() - 0.5) * 10;   // x
+                posArray[i+1] = Math.random() * 5;          // y
+                posArray[i+2] = (Math.random() - 0.5) * 10; // z
+                
+                randomArray[i/3] = Math.random() * Math.PI * 2;
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            geo.setAttribute('aRandom', new THREE.BufferAttribute(randomArray, 1));
+
+            const mat = new THREE.PointsMaterial({
+                size: 0.03,
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.4,
+                blending: THREE.AdditiveBlending
+            });
+
+            const particles = new THREE.Points(geo, mat);
+            scene.add(particles);
+            dustParticles.push(particles);
+        }
+
+        function animateTitle() {
+            const tl = gsap.timeline();
+            
+            // Fade in over 2s
+            tl.to("#title", {
+                opacity: 1,
+                duration: 2.5,
+                ease: "power2.inOut"
+            })
+            // Then fade down to 0.15
+            .to("#title", {
+                opacity: 0.15,
+                duration: 2.0,
+                ease: "power2.inOut"
+            }, "+=0.5"); // Wait 0.5s before fading out
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- MAIN LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            if (mixer) mixer.update(delta);
+
+            // 1. Camera Orbit & Bob
+            // Simple circular orbit logic overriding standard controls if user isn't dragging (or additive)
+            // Here we'll just move the camera manually on a path, updating controls target
+            const camAngle = elapsed * CONFIG.camera.speed * Math.PI * 2; // Full rev in 60s
+            
+            // Sinusoidal bob
+            const bobHeight = Math.sin(elapsed * 0.5) * 0.2; 
+            
+            // Update position
+            camera.position.x = Math.cos(camAngle) * CONFIG.camera.radius;
+            camera.position.z = Math.sin(camAngle) * CONFIG.camera.radius;
+            camera.position.y = CONFIG.camera.height + bobHeight;
+            
+            camera.lookAt(0, 1, 0); // Always look at character center roughly
+
+            // 2. Shard Animation
+            shards.forEach(shard => {
+                const u = shard.userData;
+                
+                // Orbit
+                u.angle += u.orbitSpeed * delta;
+                shard.position.x = Math.cos(u.angle) * u.orbitRadius;
+                shard.position.z = Math.sin(u.angle) * u.orbitRadius;
+                
+                // Bob
+                shard.position.y = u.baseY + Math.sin(elapsed * u.bobSpeed + u.bobOffset) * 0.15;
+                
+                // Local Rotation
+                shard.rotation.x += u.rotSpeedX * delta;
+                shard.rotation.y += u.rotSpeedY * delta;
+            });
+
+            // 3. Dust Animation (Drift)
+            dustParticles.forEach(p => {
+                // Simple rotation of the whole system for now, or shader based? 
+                // Let's just rotate the container slowly
+                p.rotation.y = elapsed * 0.05;
+                
+                // Pulse opacity (if we had a custom shader, but PointsMaterial is simple)
+                // We can just oscillate opacity
+                p.material.opacity = 0.3 + Math.sin(elapsed * 0.5) * 0.1;
+            });
+
+            // 4. Bloom Breathing (Pulse Rule)
+            // Sinusoidal 0.6 to 1.0
+            const breathe = 0.8 + Math.sin(elapsed * 2.0) * 0.2; 
+            if (bloomPass) {
+                bloomPass.strength = breathe * CONFIG.bloom.strength;
+            }
+
+            // 5. Film Grain Time Update
+            if (filmGrainPass) {
+                filmGrainPass.uniforms['time'].value = elapsed;
+            }
+
+            controls.update();
+            composer.render();
+        }
+
+        // Start
+        init();
+
+    </script>
+</body>
+</html>
