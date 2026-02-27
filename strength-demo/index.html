@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>STRENGTH DEMO — Flux ⚡</title>
+  <title>STRENGTH DEMO — Flux ⚡ v2</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0a12; font-family: "Courier New", monospace; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #080b14; font-family: "Inter", "Segoe UI", "Courier New", monospace; }
     canvas { display: block; }
 
     .hud {
@@ -15,18 +15,39 @@
       top: 14px;
       left: 14px;
       z-index: 20;
-      padding: 10px 12px;
-      border: 1px solid rgba(255,255,255,0.2);
-      background: rgba(8,10,18,0.55);
-      backdrop-filter: blur(6px);
-      font-size: 11px;
-      line-height: 1.45;
-      letter-spacing: 0.08em;
-      color: rgba(255,255,255,0.9);
-      max-width: min(90vw, 420px);
+      width: min(92vw, 420px);
+      padding: 12px 14px;
+      border: 1px solid rgba(111, 170, 255, 0.35);
+      background: linear-gradient(180deg, rgba(8,12,21,0.78), rgba(7,11,19,0.6));
+      backdrop-filter: blur(8px);
+      font-size: 12px;
+      line-height: 1.38;
+      letter-spacing: 0.06em;
+      color: rgba(236,243,255,0.95);
+      box-shadow: 0 8px 26px rgba(0,0,0,0.35);
     }
-    .hud b { color: #7ab5ff; }
-    .hud .muted { color: rgba(255,255,255,0.62); }
+    .hud b { color: #8ec2ff; font-weight: 700; }
+    .hud .muted { color: rgba(207,223,255,0.68); font-size: 11px; }
+    .hud .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .hud .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 8px; font-size: 11px; }
+    .hud .chip {
+      display: inline-block; padding: 2px 6px; border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 999px; font-size: 10px; letter-spacing: 0.12em; color: rgba(221,235,255,0.9);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .bar-wrap { margin-top: 8px; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.09); overflow: hidden; }
+    .bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4ca3ff, #9f7dff, #ff748a); transition: width .08s linear; }
+
+    .quality {
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(9, 11, 18, 0.72);
+      color: #d6e7ff;
+      font-size: 10px;
+      letter-spacing: .12em;
+      padding: 4px 7px;
+      cursor: pointer;
+    }
 
     .back {
       position: fixed;
@@ -54,16 +75,36 @@
       z-index: 20;
       pointer-events: none;
     }
+
+    .flash {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 15;
+      background: radial-gradient(circle at var(--fx,50%) var(--fy,50%), rgba(133,190,255,0.22), rgba(133,190,255,0.0) 45%);
+      opacity: 0;
+      transition: opacity .14s ease;
+      mix-blend-mode: screen;
+    }
   </style>
 </head>
 <body>
   <a class="back" href="../">← GALLERY</a>
   <div class="hud" id="hud">
-    <div><b>STRENGTH DEMO</b> — procedural cinematic system</div>
-    <div class="muted">Drag = orbit / tilt • Wheel or pinch = zoom</div>
-    <div class="muted">Move pointer = drive turbulence & energy flow</div>
-    <div class="muted">1/2/3 = camera styles • Space = impulse • H = hide HUD</div>
+    <div class="row"><div><b>STRENGTH DEMO</b> <span class="chip">v2 POLISH</span></div><button id="qualityBtn" class="quality">QUALITY: AUTO</button></div>
+    <div class="muted">Drag/touch = orbit • Wheel/pinch = zoom • Move pointer = turbulence</div>
+    <div class="muted">1/2/3 = camera styles • Space/Tap = impulse • H = hide HUD</div>
+    <div class="bar-wrap"><div class="bar" id="energyBar"></div></div>
+    <div class="metrics">
+      <div>Mode: <b id="modeText">ORBIT</b></div>
+      <div>FPS: <b id="fpsText">--</b></div>
+      <div>Combo: <b id="comboText">x0</b></div>
+      <div>Score: <b id="scoreText">0</b></div>
+      <div>Survival: <b id="timeText">0.0s</b></div>
+      <div>Best: <b id="bestText">0</b></div>
+    </div>
   </div>
+  <div class="flash" id="flash"></div>
   <div class="watermark">HEARTBREAK INK</div>
 
   <script type="importmap">
@@ -82,66 +123,75 @@
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
+    const hudEl = document.getElementById('hud');
+    const fpsText = document.getElementById('fpsText');
+    const comboText = document.getElementById('comboText');
+    const scoreText = document.getElementById('scoreText');
+    const bestText = document.getElementById('bestText');
+    const timeText = document.getElementById('timeText');
+    const modeText = document.getElementById('modeText');
+    const energyBar = document.getElementById('energyBar');
+    const qualityBtn = document.getElementById('qualityBtn');
+    const flash = document.getElementById('flash');
+
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = navigator.deviceMemory || 4;
+    const lowEnd = cores <= 4 || mem <= 4 || /Android|iPhone|iPad/i.test(navigator.userAgent);
+    let quality = lowEnd ? 'MED' : 'HIGH';
+
+    const qualityProfiles = {
+      LOW:  { pixelRatio: 1.0, bloom: 0.48, grain: 0.028, shadow: 1024, dust: 520, shards: 220, updateStep: 2 },
+      MED:  { pixelRatio: 1.35, bloom: 0.58, grain: 0.034, shadow: 1024, dust: 760, shards: 300, updateStep: 1 },
+      HIGH: { pixelRatio: 1.8, bloom: 0.66, grain: 0.040, shadow: 2048, dust: 1100, shards: 420, updateStep: 1 }
+    };
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(innerWidth, innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0a0a12');
-    scene.fog = new THREE.FogExp2('#0a0a12', 0.055);
+    scene.background = new THREE.Color('#080b14');
+    scene.fog = new THREE.FogExp2('#080b14', 0.046);
 
     const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
     camera.position.set(0, 1.65, 8.6);
 
-    // HBI 3-point lighting
-    const key = new THREE.DirectionalLight('#4488ff', 2.0);
+    const key = new THREE.DirectionalLight('#4f92ff', 1.8);
     key.position.set(3, 4, 2);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
     scene.add(key);
 
-    const fill = new THREE.DirectionalLight('#ff6633', 0.8);
+    const fill = new THREE.DirectionalLight('#b44dff', 0.45);
     fill.position.set(-3, 2, -1);
     fill.castShadow = true;
-    fill.shadow.mapSize.set(2048, 2048);
     scene.add(fill);
 
-    const rim = new THREE.DirectionalLight('#ffffff', 1.5);
+    const rim = new THREE.DirectionalLight('#89cbff', 1.2);
     rim.position.set(0, 3, -3);
     rim.castShadow = true;
-    rim.shadow.mapSize.set(2048, 2048);
     scene.add(rim);
 
-    scene.add(new THREE.AmbientLight('#1e2540', 0.24));
+    scene.add(new THREE.AmbientLight('#1b2444', 0.24));
 
     const group = new THREE.Group();
     scene.add(group);
 
-    // Ground sheen
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(20, 96),
-      new THREE.MeshStandardMaterial({ color: '#0b0f1b', metalness: 0.75, roughness: 0.35 })
+      new THREE.MeshStandardMaterial({ color: '#0a1120', metalness: 0.75, roughness: 0.38 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -2.5;
     ground.receiveShadow = true;
     group.add(ground);
 
-    // Hero: procedural torus knot + shell
     const core = new THREE.Mesh(
       new THREE.TorusKnotGeometry(1.65, 0.44, 380, 48, 2, 5),
       new THREE.MeshPhysicalMaterial({
-        color: '#7cb9ff',
-        emissive: '#214b96',
-        emissiveIntensity: 0.9,
-        metalness: 0.92,
-        roughness: 0.22,
-        clearcoat: 1,
-        clearcoatRoughness: 0.2
+        color: '#7cb9ff', emissive: '#274f9f', emissiveIntensity: 0.8,
+        metalness: 0.9, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.22
       })
     );
     core.castShadow = true;
@@ -151,260 +201,350 @@
     const shell = new THREE.Mesh(
       new THREE.IcosahedronGeometry(3.2, 4),
       new THREE.MeshStandardMaterial({
-        color: '#4da3ff',
-        emissive: '#163e7c',
-        emissiveIntensity: 0.18,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.24
+        color: '#6caeff', emissive: '#17386f', emissiveIntensity: 0.2,
+        wireframe: true, transparent: true, opacity: 0.19
       })
     );
     group.add(shell);
 
-    // Instanced ribbons / shards
-    const shardCount = 420;
-    const shardGeo = new THREE.BoxGeometry(0.05, 0.28, 0.05);
-    const shardMat = new THREE.MeshStandardMaterial({
-      color: '#7fb6ff', emissive: '#1d3f7d', emissiveIntensity: 0.8, metalness: 0.8, roughness: 0.25
-    });
-    const shards = new THREE.InstancedMesh(shardGeo, shardMat, shardCount);
-    shards.castShadow = true;
-    group.add(shards);
-
-    const dummy = new THREE.Object3D();
-    const shardData = Array.from({ length: shardCount }, (_, i) => {
-      const a = Math.random() * Math.PI * 2;
-      const b = Math.random() * Math.PI * 2;
-      const r = 2.5 + Math.random() * 2.8;
-      return {
-        a, b, r,
-        speed: 0.15 + Math.random() * 0.6,
-        wobble: 0.3 + Math.random() * 1.4,
-        seed: Math.random() * 100,
-        hue: 0.55 + Math.random() * 0.12
-      };
-    });
-
-    // Dust field
-    const dustCount = 1100;
-    const dustPos = new Float32Array(dustCount * 3);
-    const dustVel = new Float32Array(dustCount);
-    for (let i = 0; i < dustCount; i++) {
-      dustPos[i * 3] = (Math.random() - 0.5) * 26;
-      dustPos[i * 3 + 1] = (Math.random() - 0.3) * 14;
-      dustPos[i * 3 + 2] = (Math.random() - 0.5) * 26;
-      dustVel[i] = 0.008 + Math.random() * 0.03;
-    }
-    const dustGeo = new THREE.BufferGeometry();
-    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-    const dust = new THREE.Points(
-      dustGeo,
-      new THREE.PointsMaterial({ color: '#a6c6ff', size: 0.03, transparent: true, opacity: 0.55, depthWrite: false })
+    const shock = new THREE.Mesh(
+      new THREE.TorusGeometry(2.1, 0.04, 20, 120),
+      new THREE.MeshBasicMaterial({ color: '#93c9ff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending })
     );
-    group.add(dust);
+    shock.rotation.x = Math.PI * 0.5;
+    shock.visible = false;
+    group.add(shock);
 
-    // Post
+    let shardCount = 420;
+    let dustCount = 1100;
+    const shardGeo = new THREE.BoxGeometry(0.05, 0.28, 0.05);
+    const shardMat = new THREE.MeshStandardMaterial({ color: '#8ec3ff', emissive: '#2a4f95', emissiveIntensity: 0.68, metalness: 0.8, roughness: 0.25 });
+    let shards, shardData = [];
+
+    let dust, dustGeo, dustVel;
+
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
 
-    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.82, 0.4, 0.2);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.66, 0.35, 0.42);
     composer.addPass(bloom);
 
     const grainPass = new ShaderPass({
-      uniforms: {
-        tDiffuse: { value: null },
-        time: { value: 0 },
-        amount: { value: 0.045 }
-      },
+      uniforms: { tDiffuse: { value: null }, time: { value: 0 }, amount: { value: 0.04 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float time;
-        uniform float amount;
-        varying vec2 vUv;
+        uniform sampler2D tDiffuse; uniform float time; uniform float amount; varying vec2 vUv;
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
-        void main(){
-          vec4 col = texture2D(tDiffuse, vUv);
-          float noise = hash(vUv * (time * 0.8 + 41.0)) - 0.5;
-          col.rgb += noise * amount;
-          gl_FragColor = col;
-        }
+        void main(){ vec4 col = texture2D(tDiffuse, vUv); float n = hash(vUv * (time * 0.75 + 39.0)) - 0.5; col.rgb += n * amount; gl_FragColor = col; }
       `
     });
     composer.addPass(grainPass);
 
     const vignettePass = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, offset: { value: 1.0 }, darkness: { value: 1.15 } },
+      uniforms: { tDiffuse: { value: null }, offset: { value: 1.08 }, darkness: { value: 1.12 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);} `,
       fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float offset;
-        uniform float darkness;
-        varying vec2 vUv;
-        void main(){
-          vec4 c = texture2D(tDiffuse, vUv);
-          vec2 uv = (vUv - 0.5) * vec2(offset);
-          float vig = smoothstep(0.86, 0.2, dot(uv, uv));
-          c.rgb *= mix(darkness, 1.0, vig);
-          gl_FragColor = c;
-        }
+        uniform sampler2D tDiffuse; uniform float offset; uniform float darkness; varying vec2 vUv;
+        void main(){ vec4 c = texture2D(tDiffuse, vUv); vec2 uv = (vUv - 0.5) * vec2(offset); float vig = smoothstep(0.90, 0.24, dot(uv, uv)); c.rgb *= mix(darkness, 1.0, vig); gl_FragColor = c; }
       `
     });
     composer.addPass(vignettePass);
 
-    // Input + stable camera rig
     const input = {
-      tx: 0, ty: 0, x: 0, y: 0,
+      tx: 0, ty: 0, x: 0, y: 0, vx: 0, vy: 0,
       down: false, lastX: 0, lastY: 0,
-      yaw: 0, pitch: 0.15,
+      yaw: 0, pitch: 0.16,
       radius: 8.6, targetRadius: 8.6,
-      mode: 1,
-      impulse: 0,
-      hud: true
+      mode: 1, impulse: 0, impulseKick: 0,
+      hud: true, pointerX: 50, pointerY: 50
     };
 
+    const game = { combo: 0, score: 0, best: 0, survive: 0, beatWindow: 0, missTimer: 0 };
+
+    let activeTouches = new Map();
+    let prevPinch = 0;
+
+    function setModeLabel() {
+      modeText.textContent = input.mode === 1 ? 'ORBIT' : input.mode === 2 ? 'DRIFT' : 'KINETIC';
+    }
+
+    function triggerImpulse(px, py) {
+      input.impulse = Math.min(input.impulse + 1.3, 4);
+      input.impulseKick = 1;
+      flash.style.setProperty('--fx', `${px}%`);
+      flash.style.setProperty('--fy', `${py}%`);
+      flash.style.opacity = '1';
+      setTimeout(() => flash.style.opacity = '0', 80);
+
+      const hit = game.beatWindow > 0;
+      if (hit) {
+        game.combo = Math.min(game.combo + 1, 99);
+        game.score += 10 + Math.floor(game.combo * 1.5);
+      } else {
+        game.combo = Math.max(0, game.combo - 2);
+      }
+      game.best = Math.max(game.best, game.score);
+    }
+
+    addEventListener('pointerdown', (e) => {
+      input.down = true;
+      input.lastX = e.clientX;
+      input.lastY = e.clientY;
+      if (e.pointerType === 'touch') triggerImpulse((e.clientX / innerWidth) * 100, (e.clientY / innerHeight) * 100);
+    });
+    addEventListener('pointerup', () => input.down = false);
+
     addEventListener('pointermove', (e) => {
-      input.tx = (e.clientX / innerWidth) * 2 - 1;
-      input.ty = (e.clientY / innerHeight) * 2 - 1;
+      const nx = (e.clientX / innerWidth) * 2 - 1;
+      const ny = (e.clientY / innerHeight) * 2 - 1;
+      input.tx = nx;
+      input.ty = ny;
+      input.pointerX = (e.clientX / innerWidth) * 100;
+      input.pointerY = (e.clientY / innerHeight) * 100;
+
       if (input.down) {
-        input.yaw -= (e.clientX - input.lastX) * 0.004;
-        input.pitch -= (e.clientY - input.lastY) * 0.003;
+        input.yaw -= (e.clientX - input.lastX) * 0.0038;
+        input.pitch -= (e.clientY - input.lastY) * 0.0029;
         input.pitch = THREE.MathUtils.clamp(input.pitch, -0.3, 0.75);
       }
       input.lastX = e.clientX;
       input.lastY = e.clientY;
     });
-    addEventListener('pointerdown', (e) => { input.down = true; input.lastX = e.clientX; input.lastY = e.clientY; });
-    addEventListener('pointerup', () => input.down = false);
+
     addEventListener('wheel', (e) => {
-      input.targetRadius = THREE.MathUtils.clamp(input.targetRadius + e.deltaY * 0.006, 5.6, 14);
+      input.targetRadius = THREE.MathUtils.clamp(input.targetRadius + e.deltaY * 0.0055, 5.6, 14);
+    }, { passive: true });
+
+    addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }, { passive: true });
+
+    addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      if (activeTouches.size >= 2) {
+        const values = [...activeTouches.values()];
+        const d = Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
+        if (prevPinch) input.targetRadius = THREE.MathUtils.clamp(input.targetRadius - (d - prevPinch) * 0.018, 5.6, 14);
+        prevPinch = d;
+      }
+    }, { passive: true });
+
+    addEventListener('touchend', (e) => {
+      for (const t of e.changedTouches) activeTouches.delete(t.identifier);
+      if (activeTouches.size < 2) prevPinch = 0;
     }, { passive: true });
 
     addEventListener('keydown', (e) => {
       if (e.code === 'Digit1') input.mode = 1;
       if (e.code === 'Digit2') input.mode = 2;
       if (e.code === 'Digit3') input.mode = 3;
-      if (e.code === 'Space') input.impulse = Math.min(input.impulse + 1.5, 4);
+      if (e.code === 'Space') triggerImpulse(input.pointerX, input.pointerY);
       if (e.code === 'KeyH') {
         input.hud = !input.hud;
-        document.getElementById('hud').style.display = input.hud ? '' : 'none';
+        hudEl.style.display = input.hud ? '' : 'none';
       }
+      setModeLabel();
     });
 
-    const touchCache = [];
-    addEventListener('touchstart', (e) => {
-      for (const t of e.changedTouches) touchCache.push(t);
-    }, { passive: true });
-    addEventListener('touchmove', (e) => {
-      if (e.touches.length === 2) {
-        const a = e.touches[0], b = e.touches[1];
-        const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        if (touchCache.length >= 2) {
-          const pa = touchCache[0], pb = touchCache[1];
-          const pd = Math.hypot(pa.clientX - pb.clientX, pa.clientY - pb.clientY);
-          input.targetRadius = THREE.MathUtils.clamp(input.targetRadius - (d - pd) * 0.02, 5.6, 14);
-        }
-      }
-      const t = e.touches[0];
-      if (t) {
-        input.tx = (t.clientX / innerWidth) * 2 - 1;
-        input.ty = (t.clientY / innerHeight) * 2 - 1;
-      }
-    }, { passive: true });
+    qualityBtn.addEventListener('click', () => {
+      quality = quality === 'HIGH' ? 'MED' : quality === 'MED' ? 'LOW' : 'HIGH';
+      qualityBtn.textContent = `QUALITY: ${quality}`;
+      applyQuality(quality);
+    });
 
-    // Rhythm engine (web-native beat layer)
+    const dummy = new THREE.Object3D();
+    function buildShards(count) {
+      if (shards) group.remove(shards);
+      shardCount = count;
+      shards = new THREE.InstancedMesh(shardGeo, shardMat, shardCount);
+      shards.castShadow = true;
+      shardData = Array.from({ length: shardCount }, () => ({
+        a: Math.random() * Math.PI * 2,
+        b: Math.random() * Math.PI * 2,
+        r: 2.5 + Math.random() * 2.7,
+        speed: 0.15 + Math.random() * 0.62,
+        wobble: 0.3 + Math.random() * 1.35,
+        seed: Math.random() * 100
+      }));
+      group.add(shards);
+    }
+
+    function buildDust(count) {
+      if (dust) group.remove(dust);
+      dustCount = count;
+      const dustPos = new Float32Array(dustCount * 3);
+      dustVel = new Float32Array(dustCount);
+      for (let i = 0; i < dustCount; i++) {
+        dustPos[i * 3] = (Math.random() - 0.5) * 26;
+        dustPos[i * 3 + 1] = (Math.random() - 0.3) * 14;
+        dustPos[i * 3 + 2] = (Math.random() - 0.5) * 26;
+        dustVel[i] = 0.008 + Math.random() * 0.03;
+      }
+      dustGeo = new THREE.BufferGeometry();
+      dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+      dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: '#8eb7ff', size: 0.03, transparent: true, opacity: 0.52, depthWrite: false }));
+      group.add(dust);
+    }
+
+    function applyQuality(level) {
+      const q = qualityProfiles[level];
+      renderer.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio));
+      key.shadow.mapSize.set(q.shadow, q.shadow);
+      fill.shadow.mapSize.set(q.shadow, q.shadow);
+      rim.shadow.mapSize.set(q.shadow, q.shadow);
+      bloom.strength = q.bloom;
+      grainPass.uniforms.amount.value = q.grain;
+      buildShards(q.shards);
+      buildDust(q.dust);
+      onResize();
+    }
+
     const bpm = 112;
     const beatSec = 60 / bpm;
     const clock = new THREE.Clock();
+    let frames = 0;
+    let fpsTimer = 0;
+    let avgFps = 60;
 
-    function animate() {
-      const t = clock.getElapsedTime();
-      const dt = Math.min(clock.getDelta(), 0.05);
-
-      input.x = THREE.MathUtils.lerp(input.x, input.tx, 0.06);
-      input.y = THREE.MathUtils.lerp(input.y, input.ty, 0.06);
-      input.radius = THREE.MathUtils.lerp(input.radius, input.targetRadius, 0.1);
-      input.impulse = THREE.MathUtils.lerp(input.impulse, 0, 0.04);
-
-      // Rhythm pulse (deterministic + smooth)
-      const phase = (t % beatSec) / beatSec;
-      const beat = Math.exp(-22.0 * phase) + 0.35 * Math.exp(-18.0 * ((phase + 0.5) % 1.0));
-      const energy = beat + Math.abs(input.x) * 0.38 + Math.abs(input.y) * 0.22 + input.impulse;
-
-      // Camera modes: all damped to avoid jitter
-      const autoYaw = t * 0.16;
-      const modeOffset = input.mode === 1 ? 0 : input.mode === 2 ? Math.sin(t * 0.23) * 0.5 : Math.sin(t * 0.13) * 1.0;
-      const yaw = input.yaw + autoYaw + modeOffset;
-      const pitch = input.pitch + (input.mode === 3 ? Math.sin(t * 0.32) * 0.06 : 0.0);
-      const focus = new THREE.Vector3(input.x * 0.55, Math.sin(t * 0.35) * 0.18, input.y * 0.55);
-      const r = input.radius + Math.sin(t * 0.42) * 0.22;
-      const targetPos = new THREE.Vector3(
-        Math.cos(yaw) * Math.cos(pitch) * r,
-        Math.sin(pitch) * r + 0.3,
-        Math.sin(yaw) * Math.cos(pitch) * r
-      );
-
-      camera.position.lerp(targetPos, 0.08);
-      camera.lookAt(focus);
-
-      // Breathing lights
-      key.intensity = 1.8 + beat * 0.45;
-      fill.intensity = 0.7 + beat * 0.18;
-      rim.intensity = 1.35 + beat * 0.3;
-
-      // Hero dynamics
-      core.rotation.x += dt * (0.18 + energy * 0.02);
-      core.rotation.y += dt * (0.27 + energy * 0.04);
-      const s = 1 + energy * 0.08;
-      core.scale.setScalar(s);
-
-      shell.rotation.x -= dt * (0.08 + beat * 0.03);
-      shell.rotation.y += dt * (0.12 + beat * 0.05);
-      shell.material.opacity = 0.16 + energy * 0.12;
-
-      // Procedural shards
-      for (let i = 0; i < shardCount; i++) {
-        const p = shardData[i];
-        const tt = t * p.speed + p.seed;
-        const rr = p.r + Math.sin(tt * 1.7 + input.x * 2.4) * 0.2 + energy * 0.35;
-        const x = Math.cos(p.a + tt * 0.4) * rr;
-        const y = Math.sin(p.b + tt * 0.6) * (1.4 + p.wobble) + Math.sin(tt * 2.2) * 0.25;
-        const z = Math.sin(p.a + tt * 0.5) * rr;
-        dummy.position.set(x, y, z);
-        dummy.rotation.set(tt * 0.9, tt * 0.6, tt * 1.1);
-        const sc = 0.8 + beat * 1.2;
-        dummy.scale.set(1, sc, 1);
-        dummy.updateMatrix();
-        shards.setMatrixAt(i, dummy.matrix);
-      }
-      shards.instanceMatrix.needsUpdate = true;
-
-      // Dust drift
-      const pos = dustGeo.attributes.position.array;
-      for (let i = 0; i < dustCount; i++) {
-        const i3 = i * 3;
-        pos[i3 + 1] += dustVel[i] * (0.22 + beat * 0.6);
-        pos[i3] += Math.sin(t * 0.4 + i * 0.17 + input.x * 3.5) * 0.0015;
-        pos[i3 + 2] += Math.cos(t * 0.5 + i * 0.13 + input.y * 3.2) * 0.0015;
-        if (pos[i3 + 1] > 8) pos[i3 + 1] = -6;
-      }
-      dustGeo.attributes.position.needsUpdate = true;
-
-      // Post modulation (controlled)
-      bloom.strength = 0.66 + Math.min(energy, 1.5) * 0.22;
-      grainPass.uniforms.time.value = t;
-
-      composer.render();
-      requestAnimationFrame(animate);
-    }
-
-    addEventListener('resize', () => {
+    function onResize() {
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
       composer.setSize(innerWidth, innerHeight);
       bloom.setSize(innerWidth, innerHeight);
-    });
+    }
+
+    addEventListener('resize', onResize);
+
+    qualityBtn.textContent = `QUALITY: ${quality}`;
+    applyQuality(quality);
+    setModeLabel();
+
+    function animate() {
+      const t = clock.getElapsedTime();
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const q = qualityProfiles[quality];
+
+      // smoother response curve (damped spring)
+      const sx = (input.tx - input.x);
+      const sy = (input.ty - input.y);
+      input.vx = (input.vx + sx * 0.18) * 0.78;
+      input.vy = (input.vy + sy * 0.18) * 0.78;
+      input.x += input.vx;
+      input.y += input.vy;
+      input.radius = THREE.MathUtils.lerp(input.radius, input.targetRadius, 0.085);
+      input.impulse = THREE.MathUtils.lerp(input.impulse, 0, 0.05);
+      input.impulseKick = THREE.MathUtils.lerp(input.impulseKick, 0, 0.12);
+
+      // intentional 2-band rhythm (kick + hats/high)
+      const phase = (t % beatSec) / beatSec;
+      const kick = Math.exp(-24.0 * phase);
+      const snare = Math.exp(-20.0 * ((phase + 0.5) % 1.0));
+      const hats = Math.pow(0.5 + 0.5 * Math.sin(t * Math.PI * 8.0), 8.0) * 0.55;
+      const lowBand = kick + snare * 0.3;
+      const highBand = hats + snare * 0.45;
+      const energy = lowBand * 0.9 + highBand * 0.7 + Math.abs(input.x) * 0.35 + Math.abs(input.y) * 0.2 + input.impulse;
+
+      game.beatWindow = phase < 0.18 || phase > 0.84 ? 1 : 0;
+      game.survive += dt;
+      game.missTimer += dt;
+      if (game.missTimer > 1.7) {
+        game.combo = Math.max(0, game.combo - 1);
+        game.missTimer = 0;
+      }
+
+      const autoYaw = t * 0.16;
+      const modeOffset = input.mode === 1 ? 0 : input.mode === 2 ? Math.sin(t * 0.25) * 0.42 : Math.sin(t * 0.14) * 1.0;
+      const yaw = input.yaw + autoYaw + modeOffset;
+      const pitch = input.pitch + (input.mode === 3 ? Math.sin(t * 0.34) * 0.06 : 0.0);
+      const focus = new THREE.Vector3(input.x * 0.52, Math.sin(t * 0.35) * 0.17, input.y * 0.52);
+      const r = input.radius + Math.sin(t * 0.4) * 0.2;
+      const targetPos = new THREE.Vector3(
+        Math.cos(yaw) * Math.cos(pitch) * r,
+        Math.sin(pitch) * r + 0.26,
+        Math.sin(yaw) * Math.cos(pitch) * r
+      );
+      camera.position.lerp(targetPos, 0.075);
+      camera.lookAt(focus);
+
+      // color script consistency
+      const grade = THREE.MathUtils.clamp(0.2 + lowBand * 0.5 + input.impulse * 0.2, 0, 1);
+      key.color.setHSL(0.60 - grade * 0.02, 0.82, 0.57);
+      fill.color.setHSL(0.76 + highBand * 0.02, 0.72, 0.50);
+      rim.color.setHSL(0.55, 0.75, 0.62 + highBand * 0.07);
+      key.intensity = 1.55 + lowBand * 0.7;
+      fill.intensity = 0.38 + highBand * 0.3;
+      rim.intensity = 1.05 + highBand * 0.42;
+
+      core.rotation.x += dt * (0.18 + energy * 0.016);
+      core.rotation.y += dt * (0.27 + energy * 0.032);
+      core.scale.setScalar(1 + lowBand * 0.13 + input.impulse * 0.1);
+
+      shell.rotation.x -= dt * (0.07 + lowBand * 0.03);
+      shell.rotation.y += dt * (0.11 + highBand * 0.06);
+      shell.material.opacity = 0.15 + lowBand * 0.06 + input.impulse * 0.08;
+
+      if (input.impulseKick > 0.02) {
+        shock.visible = true;
+        const ss = 1 + (1 - input.impulseKick) * 1.8;
+        shock.scale.set(ss, ss, ss);
+        shock.material.opacity = input.impulseKick * 0.45;
+      } else {
+        shock.visible = false;
+      }
+
+      for (let i = 0; i < shardCount; i++) {
+        const p = shardData[i];
+        const tt = t * p.speed + p.seed;
+        const rr = p.r + Math.sin(tt * 1.8 + input.x * 2.5) * 0.18 + lowBand * 0.28;
+        dummy.position.set(
+          Math.cos(p.a + tt * 0.42) * rr,
+          Math.sin(p.b + tt * 0.62) * (1.36 + p.wobble) + Math.sin(tt * 2.2) * 0.21,
+          Math.sin(p.a + tt * 0.5) * rr
+        );
+        dummy.rotation.set(tt * (0.84 + highBand * 0.2), tt * 0.58, tt * (1.0 + highBand * 0.4));
+        dummy.scale.set(1, 0.82 + lowBand * 1.08 + highBand * 0.45, 1);
+        dummy.updateMatrix();
+        shards.setMatrixAt(i, dummy.matrix);
+      }
+      shards.instanceMatrix.needsUpdate = true;
+
+      if ((frames % q.updateStep) === 0) {
+        const pos = dustGeo.attributes.position.array;
+        for (let i = 0; i < dustCount; i++) {
+          const i3 = i * 3;
+          pos[i3 + 1] += dustVel[i] * (0.2 + lowBand * 0.5);
+          pos[i3] += Math.sin(t * 0.4 + i * 0.17 + input.x * 3.3) * 0.0013;
+          pos[i3 + 2] += Math.cos(t * 0.5 + i * 0.13 + input.y * 3.1) * 0.0013;
+          if (pos[i3 + 1] > 8) pos[i3 + 1] = -6;
+        }
+        dustGeo.attributes.position.needsUpdate = true;
+      }
+
+      bloom.strength = q.bloom + Math.min(highBand, 1.2) * 0.12 + input.impulse * 0.05;
+      bloom.radius = 0.32 + highBand * 0.08;
+      grainPass.uniforms.time.value = t;
+
+      // adaptive auto downgrade to reduce stutter
+      frames++;
+      fpsTimer += dt;
+      if (fpsTimer > 0.6) {
+        avgFps = THREE.MathUtils.lerp(avgFps, frames / fpsTimer, 0.4);
+        fpsText.textContent = avgFps.toFixed(0);
+        if (avgFps < 40 && quality === 'HIGH') { quality = 'MED'; qualityBtn.textContent = 'QUALITY: MED'; applyQuality('MED'); }
+        else if (avgFps < 30 && quality === 'MED') { quality = 'LOW'; qualityBtn.textContent = 'QUALITY: LOW'; applyQuality('LOW'); }
+        frames = 0; fpsTimer = 0;
+      }
+
+      comboText.textContent = `x${game.combo}`;
+      scoreText.textContent = `${game.score}`;
+      bestText.textContent = `${game.best}`;
+      timeText.textContent = `${game.survive.toFixed(1)}s`;
+      energyBar.style.width = `${Math.min(100, energy * 36)}%`;
+
+      composer.render();
+      requestAnimationFrame(animate);
+    }
 
     animate();
   </script>
