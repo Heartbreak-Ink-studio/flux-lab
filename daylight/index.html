@@ -61,13 +61,13 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
+    renderer.toneMappingExposure = 0.88;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     app.appendChild(renderer.domElement);
 
     // HBI lights + sun-biased key for daylight warmth
-    const key = new THREE.DirectionalLight('#ffd59a', 2.35);
+    const key = new THREE.DirectionalLight('#ffd59a', 1.6);
     key.position.set(-48, 34, 14);
     key.castShadow = true;
     key.shadow.mapSize.set(HBI_DEFAULTS.lighting.shadowMapSize, HBI_DEFAULTS.lighting.shadowMapSize);
@@ -293,8 +293,8 @@
 
     // Camera rail + post
     const post = new PostStack(renderer, scene, camera);
-    post.setAnamorphic({ intensity:0.25, threshold:0.77, stretch:2.2 });
-    post.setBloom({ strength:0.92, radius:0.42, threshold:0.23 });
+    post.setAnamorphic({ intensity:0.10, threshold:0.88, stretch:1.6 });
+    post.setBloom({ strength:0.45, radius:0.35, threshold:0.38 });
     post.setLetterbox({ enabled:true, height:0.092 });
 
     const rail = new CameraRail(camera, { profile:'dolly' });
@@ -304,10 +304,10 @@
     ]);
 
     rail.setSequence([
-      { duration:7.5, from:0.0, to:0.22, lens:'24mm', operator:'dolly', easing:'easeInOutSine', grading:{ exposure:1.03, contrast:1.06, saturation:1.02, tint:'#fff5e5' }, dof:{ aperture:0.02, maxBlur:0.01 } },
-      { duration:8.0, from:0.22, to:0.52, lens:'50mm', operator:'shoulder', easing:'easeInOutCubic', grading:{ exposure:1.05, contrast:1.08, saturation:1.04, tint:'#ffe7c8' }, dof:{ aperture:0.03, maxBlur:0.015 } },
-      { duration:5.0, from:0.52, to:0.62, lens:'85mm', operator:'dolly', easing:'easeInOutSine', grading:{ exposure:1.07, contrast:1.04, saturation:0.98, tint:'#ffd9b0' }, dof:{ aperture:0.04, maxBlur:0.02 } },
-      { duration:9.5, from:0.62, to:1.0, lens:'35mm', operator:'crane', easing:'easeInOutCubic', grading:{ exposure:1.08, contrast:1.1, saturation:1.03, tint:'#ffe1be' }, dof:{ aperture:0.022, maxBlur:0.012 } }
+      { duration:7.5, from:0.0, to:0.22, lens:'24mm', operator:'dolly', easing:'easeInOutSine', grading:{ exposure:0.95, contrast:1.04, saturation:1.02, tint:'#fff5e5' }, dof:{ aperture:0.008, maxBlur:0.004 } },
+      { duration:8.0, from:0.22, to:0.52, lens:'50mm', operator:'dolly', easing:'easeInOutCubic', grading:{ exposure:0.97, contrast:1.05, saturation:1.03, tint:'#ffe7c8' }, dof:{ aperture:0.010, maxBlur:0.005 } },
+      { duration:5.0, from:0.52, to:0.62, lens:'85mm', operator:'dolly', easing:'easeInOutSine', grading:{ exposure:0.98, contrast:1.03, saturation:0.98, tint:'#ffd9b0' }, dof:{ aperture:0.012, maxBlur:0.006 } },
+      { duration:9.5, from:0.62, to:1.0, lens:'35mm', operator:'crane', easing:'easeInOutCubic', grading:{ exposure:0.96, contrast:1.06, saturation:1.02, tint:'#ffe1be' }, dof:{ aperture:0.008, maxBlur:0.004 } }
     ]);
 
     // Story timing
@@ -415,9 +415,9 @@
       rail.update(t, post);
 
       // ambient life
-      key.intensity = 2.25 + Math.sin(t*0.25)*0.2;
-      fill.intensity = 0.66 + Math.sin(t*0.33 + 1.1)*0.07;
-      post.setBloom({ strength: 0.88 + Math.sin(t*0.4)*0.09 });
+      key.intensity = 1.55 + Math.sin(t*0.25)*0.08;
+      fill.intensity = 0.66 + Math.sin(t*0.33 + 1.1)*0.04;
+      post.setBloom({ strength: 0.42 + Math.sin(t*0.4)*0.04 });
 
       const lp = leaves.geometry.attributes.position;
       for(let i=0;i<leafCount;i++){
