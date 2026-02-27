@@ -3,26 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DATE CAFE — flux showcase</title>
+  <title>DATE CAFE — v2</title>
   <style>
-    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#0c0808; }
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#171311; }
     #app { width:100%; height:100%; }
-    #watermark {
-      position: fixed; right: 16px; bottom: 12px; z-index: 20;
-      color: rgba(255,235,220,.42); font: 11px monospace; letter-spacing: .16em;
-      text-shadow: 0 0 10px rgba(255,120,80,.2);
-    }
-    #subtitle {
-      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-      color: rgba(255,220,180,.62); font: 11px monospace; letter-spacing: .12em; z-index: 20;
-      pointer-events: none;
-    }
-    #audioHint {
-      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
-      color: rgba(230,220,205,.75); font: 11px monospace; letter-spacing: .12em; z-index: 25;
-      background: rgba(18, 12, 12, .55); border: 1px solid rgba(255,180,120,.2);
-      border-radius: 4px; padding: 6px 10px;
-    }
+    .ui { position:fixed; z-index:5; pointer-events:none; font:11px monospace; letter-spacing:.12em; color:rgba(255,228,205,.65); }
+    #subtitle { left:50%; bottom:16px; transform:translateX(-50%); }
+    #back { pointer-events:auto; position:fixed; left:16px; top:16px; z-index:6; color:#e7b28f; border:1px solid rgba(231,178,143,.35); text-decoration:none; font:11px monospace; letter-spacing:.1em; padding:6px 10px; background:rgba(20,14,12,.7); border-radius:4px; }
   </style>
   <script type="importmap">
   {
@@ -34,434 +21,304 @@
   </script>
 </head>
 <body>
-  <a href="../" style="position:fixed;top:16px;left:16px;z-index:9999;color:#d88f6b;font-family:monospace;font-size:0.8rem;text-decoration:none;opacity:0.75;letter-spacing:0.1em;padding:6px 12px;border:1px solid rgba(216,143,107,0.35);border-radius:4px;background:rgba(10,7,7,0.82);transition:opacity 0.3s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.75">← GALLERY</a>
+  <a id="back" href="../">← GALLERY</a>
   <div id="app"></div>
-  <div id="audioHint">tap for ambience</div>
-  <div id="subtitle">DATE CAFE — rain, restraint, lingering eye contact</div>
-  <div id="watermark">HEARTBREAK INK</div>
+  <div id="subtitle" class="ui">DATE CAFE — stable camera, warmer room, gentle rain</div>
 
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { CameraRail } from '../lib/camera-rail.js';
-    import { PostStack } from '../lib/post-stack.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+
+    const SET = {
+      loop: 24,
+      exposure: 0.92,
+      bloom: 0.36,
+      dofAperture: 0.008,
+      dofMaxBlur: 0.004,
+      room: { w: 14, d: 10, h: 4.2 }
+    };
 
     const app = document.getElementById('app');
-    const audioHint = document.getElementById('audioHint');
-
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0e0b0b');
-    scene.fog = new THREE.FogExp2('#1a1010', 0.038);
+    scene.background = new THREE.Color('#231b17');
+    scene.fog = new THREE.Fog('#2b221d', 8, 24);
 
-    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 250);
-    camera.position.set(-8, 2.2, 8);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.9; // constrained range
+    renderer.toneMappingExposure = SET.exposure;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     app.appendChild(renderer.domElement);
 
-    const post = new PostStack(renderer, scene, camera);
-    post.setBloom({ strength: 0.42, radius: 0.28, threshold: 0.48 });
-    post.setDOF({ aperture: 0.009, maxBlur: 0.0048 });
-    post.setAnamorphic({ intensity: 0.08, threshold: 0.86, stretch: 1.4 });
-    post.setGrading({ exposure: 0.95, contrast: 1.03, saturation: 0.9, tint: '#ffd9c7' });
-    post.setLetterbox({ enabled: true, height: 0.09 });
-
-    // warm interior + mixed accents (red / amber / green)
-    scene.add(new THREE.AmbientLight('#5a4034', 0.22));
-
-    const keyWarm = new THREE.SpotLight('#ffbb78', 2.0, 42, 0.62, 0.35, 1.2);
-    keyWarm.position.set(-2.6, 6.2, 1.2);
-    keyWarm.target.position.set(-1.1, 1.2, -0.4);
-    keyWarm.castShadow = true;
-    keyWarm.shadow.mapSize.set(2048, 2048);
-    keyWarm.shadow.bias = -0.00015;
-    scene.add(keyWarm, keyWarm.target);
-
-    const practical = new THREE.PointLight('#ff944d', 1.4, 18, 2.0);
-    practical.position.set(2.7, 2.7, -0.6);
-    scene.add(practical);
-
-    const redAccent = new THREE.PointLight('#c83d35', 0.95, 16, 2.0);
-    redAccent.position.set(-5.5, 2.0, -5.6);
-    scene.add(redAccent);
-
-    const greenAccent = new THREE.PointLight('#4ba36e', 0.75, 14, 2.0);
-    greenAccent.position.set(6.5, 1.8, -6.4);
-    scene.add(greenAccent);
-
-    const rimCool = new THREE.DirectionalLight('#7da3ac', 0.58);
-    rimCool.position.set(4, 5, -8);
-    scene.add(rimCool);
-
-    // room / cafe set
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 20),
-      new THREE.MeshStandardMaterial({ color: '#2a1a14', roughness: 0.92, metalness: 0.05 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    const backWall = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 10),
-      new THREE.MeshStandardMaterial({ color: '#2f1f1c', roughness: 0.95 })
-    );
-    backWall.position.set(0, 5, -8.2);
-    backWall.receiveShadow = true;
-    scene.add(backWall);
-
-    const sideWall = new THREE.Mesh(
-      new THREE.PlaneGeometry(20, 10),
-      new THREE.MeshStandardMaterial({ color: '#241614', roughness: 0.98 })
-    );
-    sideWall.position.set(-8.8, 5, 0);
-    sideWall.rotation.y = Math.PI / 2;
-    scene.add(sideWall);
-
-    // doorway framing + window framing
-    const frameMat = new THREE.MeshStandardMaterial({ color: '#140e0d', roughness: 0.8, metalness: 0.2 });
-    const doorwayTop = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.35, 0.25), frameMat);
-    doorwayTop.position.set(-0.5, 3.1, -7.8);
-    const doorwayL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 3.2, 0.25), frameMat);
-    doorwayL.position.set(-2.55, 1.5, -7.8);
-    const doorwayR = doorwayL.clone(); doorwayR.position.x = 1.55;
-    scene.add(doorwayTop, doorwayL, doorwayR);
-
-    const windowFrame = new THREE.Group();
-    const wx = 5.9, wz = -7.85;
-    const wt = 0.18;
-    const bars = [
-      [3.8, wt, wt, wx, 3.5, wz], [3.8, wt, wt, wx, 1.6, wz],
-      [wt, 2.1, wt, wx - 1.9, 2.55, wz], [wt, 2.1, wt, wx + 1.9, 2.55, wz],
-      [wt, 2.1, wt, wx, 2.55, wz]
-    ];
-    bars.forEach(([w,h,d,x,y,z]) => {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), frameMat);
-      b.position.set(x,y,z); windowFrame.add(b);
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), SET.bloom, 0.28, 0.82);
+    composer.addPass(bloom);
+    const bokeh = new BokehPass(scene, camera, {
+      focus: 3.2,
+      aperture: SET.dofAperture,
+      maxblur: SET.dofMaxBlur,
+      width: innerWidth,
+      height: innerHeight
     });
-    scene.add(windowFrame);
+    composer.addPass(bokeh);
 
-    const rainPane = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.7, 2.0),
-      new THREE.MeshPhysicalMaterial({
-        color:'#111317', transparent:true, opacity:0.26, roughness:0.18,
-        transmission:0.42, thickness:0.08, metalness:0.0
-      })
-    );
-    rainPane.position.set(wx, 2.55, -7.86);
-    scene.add(rainPane);
+    const LIGHT = {
+      hemi: new THREE.HemisphereLight('#f5d7be', '#698197', 0.22),
+      key: new THREE.SpotLight('#ffd1a3', 1.75, 30, 0.8, 0.45, 1.3),
+      fill: new THREE.SpotLight('#a7bfd4', 0.82, 30, 0.95, 0.6, 1.0),
+      rim: new THREE.DirectionalLight('#9ac3da', 0.9)
+    };
+    LIGHT.key.position.set(-4.8, 3.8, -3.5);
+    LIGHT.key.target.position.set(0.1, 1.1, -0.3);
+    LIGHT.key.castShadow = true;
+    LIGHT.key.shadow.mapSize.set(1024,1024);
+    LIGHT.key.shadow.bias = -0.0003;
+    LIGHT.fill.position.set(4.4, 2.8, 2.8);
+    LIGHT.fill.target.position.set(0.2, 1.0, -0.2);
+    LIGHT.rim.position.set(2.4, 3.2, -4.6);
+    scene.add(LIGHT.hemi, LIGHT.key, LIGHT.key.target, LIGHT.fill, LIGHT.fill.target, LIGHT.rim);
 
-    // table + chairs
-    const table = new THREE.Group();
-    const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.25, 0.14, 42), new THREE.MeshStandardMaterial({ color:'#5d3c2e', roughness:0.55, metalness:0.12 }));
-    tableTop.position.y = 0.98;
-    tableTop.castShadow = tableTop.receiveShadow = true;
-    const tableStem = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.17, 0.88, 22), new THREE.MeshStandardMaterial({ color:'#262225', roughness:0.5, metalness:0.45 }));
-    tableStem.position.y = 0.5;
-    const tableBase = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.58, 0.08, 24), new THREE.MeshStandardMaterial({ color:'#1f1b1d', roughness:0.62, metalness:0.38 }));
-    tableBase.position.y = 0.06;
-    table.add(tableTop, tableStem, tableBase);
-    table.position.set(-0.2, 0, -2.7);
-    scene.add(table);
+    function mat(color, rough=0.6, metal=0.05) { return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal }); }
 
-    function makeChair(x, z, rotY) {
-      const g = new THREE.Group();
-      const mat = new THREE.MeshStandardMaterial({ color:'#3a2924', roughness:0.86, metalness:0.08 });
-      const seat = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.12, 1.15), mat); seat.position.y = 0.54;
-      const back = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.2, 0.13), mat); back.position.set(0, 1.14, -0.49);
-      g.add(seat, back);
-      const legGeo = new THREE.BoxGeometry(0.11, 0.58, 0.11);
-      [[0.52,0.25,0.42],[-0.52,0.25,0.42],[0.52,0.25,-0.42],[-0.52,0.25,-0.42]].forEach(([lx,ly,lz]) => {
-        const leg = new THREE.Mesh(legGeo, mat); leg.position.set(lx,ly,lz); g.add(leg);
-      });
-      g.position.set(x,0,z); g.rotation.y = rotY;
-      g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
-      scene.add(g);
-      return g;
-    }
-    makeChair(-1.8, -2.5, 0.32);
-    makeChair(1.45, -2.6, -2.7);
+    const room = new THREE.Group();
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(SET.room.w, SET.room.d), mat('#6b4f3e', 0.56));
+    floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; room.add(floor);
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(SET.room.w, SET.room.h), mat('#7f6b5b', 0.72));
+    back.position.set(0, SET.room.h/2, -SET.room.d/2); back.receiveShadow = true; room.add(back);
+    const left = new THREE.Mesh(new THREE.PlaneGeometry(SET.room.d, SET.room.h), mat('#69574a', 0.74));
+    left.position.set(-SET.room.w/2, SET.room.h/2, 0); left.rotation.y = Math.PI/2; room.add(left);
+    const right = left.clone(); right.position.x = SET.room.w/2; right.rotation.y = -Math.PI/2; room.add(right);
+    scene.add(room);
 
-    // small props
-    const cupMat = new THREE.MeshStandardMaterial({ color:'#d5c3b2', roughness:0.42, metalness:0.03 });
-    function cup(x,z,rot=0) {
-      const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.18,0.21,20), cupMat);
-      const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.145,20), new THREE.MeshStandardMaterial({ color:'#241812', roughness:0.6 }));
-      coffee.rotation.x = -Math.PI/2; coffee.position.y = 0.106;
-      g.add(body, coffee); g.position.set(x, 1.08, z); g.rotation.y = rot;
-      g.traverse(o=>{if(o.isMesh)o.castShadow=true;});
-      scene.add(g);
-    }
-    cup(-0.62, -2.62, 0.2);
-    cup(0.28, -2.54, -0.45);
+    // Window wall + rain
+    const winGroup = new THREE.Group();
+    const frameM = mat('#3a2d25', 0.6, 0.12);
+    const winX0 = -4.0, winY = 2.3, winZ = -4.8;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(5.0, 2.8, 0.08), frameM);
+    frame.position.set(winX0, winY, winZ); winGroup.add(frame);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(4.72, 2.5), new THREE.MeshPhysicalMaterial({ color:'#9db2be', transparent:true, opacity:0.2, roughness:0.08, metalness:0, transmission:0.45 }));
+    glass.position.set(winX0, winY, winZ + 0.05); winGroup.add(glass);
+    [-1.56,0,1.56].forEach(dx => {
+      const mull = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.56, 0.1), frameM);
+      mull.position.set(winX0 + dx, winY, winZ + 0.04); winGroup.add(mull);
+    });
+    scene.add(winGroup);
 
-    const ashtray = new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.2,0.05,24), new THREE.MeshStandardMaterial({ color:'#7a7e85', roughness:0.2, metalness:0.74 }));
-    ashtray.position.set(-0.05, 1.05, -2.98); ashtray.castShadow = true; scene.add(ashtray);
-
-    // steam wisps
-    const steam = [];
-    const steamMat = new THREE.SpriteMaterial({ color:'#ffd9c2', transparent:true, opacity:0.13, depthWrite:false });
-    function makeSteam(x, z) {
-      for (let i=0;i<6;i++) {
-        const s = new THREE.Sprite(steamMat.clone());
-        s.position.set(x + (Math.random()-0.5)*0.05, 1.2 + i*0.14, z + (Math.random()-0.5)*0.05);
-        s.scale.setScalar(0.12 + i*0.03);
-        scene.add(s); steam.push(s);
-      }
-    }
-    makeSteam(-0.62, -2.62);
-    makeSteam(0.28, -2.54);
-
-    // rain outside window
-    const rainCount = 700;
     const rainGeo = new THREE.BufferGeometry();
-    const rainPos = new Float32Array(rainCount * 3);
-    const rainVel = new Float32Array(rainCount);
-    for (let i=0;i<rainCount;i++) {
-      rainPos[i*3] = THREE.MathUtils.randFloat(3.9, 7.9);
-      rainPos[i*3+1] = THREE.MathUtils.randFloat(0.9, 5.2);
-      rainPos[i*3+2] = THREE.MathUtils.randFloat(-9.2, -8.6);
-      rainVel[i] = THREE.MathUtils.randFloat(1.1, 2.2);
+    const count = 420;
+    const pos = new Float32Array(count * 3);
+    const vel = new Float32Array(count);
+    for (let i=0; i<count; i++) {
+      pos[i*3] = THREE.MathUtils.randFloat(-6.4, -1.6);
+      pos[i*3+1] = THREE.MathUtils.randFloat(1.0, 4.3);
+      pos[i*3+2] = THREE.MathUtils.randFloat(-5.9, -5.1);
+      vel[i] = THREE.MathUtils.randFloat(1.3, 2.4);
     }
-    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-    const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color:'#9eb6b7', size:0.025, transparent:true, opacity:0.45, depthWrite:false }));
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ size:0.02, color:'#bcd4e2', transparent:true, opacity:0.4, depthWrite:false }));
     scene.add(rain);
 
-    // bokeh city glow outside
-    const cityGlow = new THREE.Group();
-    for (let i=0;i<36;i++) {
-      const c = ['#cc4237','#ef9b4d','#6ba77d'][Math.floor(Math.random()*3)];
-      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.08 + Math.random()*0.12, 8, 8), new THREE.MeshBasicMaterial({ color:c }));
-      orb.position.set(3.2 + Math.random()*5.4, 0.8 + Math.random()*4.4, -10.4 - Math.random()*2.3);
-      cityGlow.add(orb);
+    // Bar / door / props for depth
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(4.0, 1.1, 0.9), mat('#4f3a2d', 0.5));
+    bar.position.set(4.5, 0.55, -1.8); bar.castShadow = bar.receiveShadow = true; scene.add(bar);
+    for (let i=0;i<9;i++) {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.35,10), mat(i%2?'#90adbe':'#bda28a',0.2,0.02));
+      b.position.set(3.2 + (i%3)*0.5, 1.4 + Math.floor(i/3)*0.35, -2.1);
+      scene.add(b);
     }
-    scene.add(cityGlow);
+    const chalk = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.3), mat('#1d2423', 0.8));
+    chalk.position.set(2.95, 1.2, -2.35); chalk.rotation.y = -0.25; scene.add(chalk);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.6, 0.08), mat('#3a2b22',0.6));
+    door.position.set(5.8, 1.3, -4.68); scene.add(door);
 
-    const loader = new GLTFLoader();
-    const rabbitURL = 'https://raw.githubusercontent.com/Heartbreak-Ink-studio/flux-lab/main/assets/characters/rabbit-rigged.glb';
-    const tortoiseURL = 'https://raw.githubusercontent.com/Heartbreak-Ink-studio/flux-lab/main/assets/characters/tortoise-rigged.glb';
+    // Table + chairs + hero props
+    const table = new THREE.Group();
+    const tTop = new THREE.Mesh(new THREE.CylinderGeometry(0.62,0.62,0.06,36), mat('#6c4d3b',0.5));
+    tTop.position.y = 0.76;
+    const tLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.11,0.7,18), mat('#2b2f33',0.35,0.5));
+    tLeg.position.y = 0.39;
+    const tBase = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.32,0.05,18), mat('#2a2a2c',0.4,0.5));
+    tBase.position.y = 0.02;
+    table.add(tTop,tLeg,tBase); table.position.set(0.2,0,-0.2);
+    table.traverse(o=>{ if (o.isMesh) { o.castShadow = o.receiveShadow = true; }});
+    scene.add(table);
 
-    const rabbitGltf = await loader.loadAsync(rabbitURL);
-    const tortoiseGltf = await loader.loadAsync(tortoiseURL);
-
-    const rabbit = rabbitGltf.scene;
-    rabbit.position.set(-1.22, 0.03, -2.46);
-    rabbit.rotation.y = 0.52;
-    rabbit.scale.setScalar(1.14);
-
-    const tortoise = tortoiseGltf.scene;
-    tortoise.position.set(1.05, 0.0, -2.48);
-    tortoise.rotation.y = -2.56;
-    tortoise.scale.setScalar(1.16);
-
-    [rabbit, tortoise].forEach(m => {
-      m.traverse(o => {
-        if (o.isMesh) {
-          o.castShadow = true;
-          o.receiveShadow = true;
-          if (o.material) {
-            o.material.roughness = Math.min(1, (o.material.roughness ?? 0.6) + 0.08);
-            o.material.metalness = Math.min(0.25, o.material.metalness ?? 0.05);
-          }
-        }
+    function chair(x,z,yRot){
+      const g = new THREE.Group();
+      const m = mat('#533e30',0.58);
+      const s = new THREE.Mesh(new THREE.BoxGeometry(0.66,0.06,0.62),m); s.position.y=0.48;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.66,0.75,0.05),m); b.position.set(0,0.86,-0.28);
+      g.add(s,b);
+      [[.28,.24,.24],[-.28,.24,.24],[.28,.24,-.24],[-.28,.24,-.24]].forEach(([lx,ly,lz])=>{
+        const l = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.48,0.05),m); l.position.set(lx,ly,lz); g.add(l);
       });
-      scene.add(m);
+      g.position.set(x,0,z); g.rotation.y=yRot; g.traverse(o=>{ if (o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); scene.add(g);
+    }
+    chair(-0.55,0.58,Math.PI); chair(0.68,0.45,0);
+
+    function cup(x,z){ const c = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.09,0.11,16), mat('#d8c9bb',0.25)); c.position.set(x,0.845,z); c.castShadow=true; scene.add(c); }
+    cup(-0.03,-0.16); cup(0.45,-0.1);
+    const pot = new THREE.Mesh(new THREE.SphereGeometry(0.1,16,16), mat('#b8a493',0.3)); pot.position.set(0.2,0.84,-0.28); pot.castShadow=true; scene.add(pot);
+    const sugar = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.12,16), mat('#cfd5da',0.12)); sugar.position.set(0.34,0.84,-0.33); scene.add(sugar);
+    const napkin = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.06,0.12), mat('#9f7867',0.7)); napkin.position.set(0.07,0.82,-0.31); scene.add(napkin);
+    const menu = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.18,0.01), mat('#efe2c8',0.7)); menu.position.set(0.04,0.87,0.08); menu.rotation.y=0.2; scene.add(menu);
+    const vase = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.04,0.12,10), mat('#9eb8bf',0.15)); vase.position.set(0.22,0.85,0.05); scene.add(vase);
+
+    // FG occluders
+    function plant(x,z,s=1){
+      const p = new THREE.Group();
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16*s,0.2*s,0.25*s,12), mat('#4e3b31',0.62));
+      const leafM = mat('#4e765b',0.7);
+      p.add(pot);
+      for (let i=0;i<5;i++) {
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.09*s,8,8), leafM);
+        leaf.scale.set(0.9,1.5,0.6);
+        leaf.position.set((Math.random()-.5)*0.2*s,0.2*s+Math.random()*0.15*s,(Math.random()-.5)*0.2*s);
+        p.add(leaf);
+      }
+      p.position.set(x,0,z); p.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); scene.add(p);
+    }
+    plant(-5.8,2.4,1.3); plant(5.6,2.2,1.1); // foreground frame
+    plant(-5.4,-4.6,0.65); plant(-3.5,-4.65,0.55); // window sill plants
+
+    // Pendant lights
+    [-2,0,2].forEach(x => {
+      const bulb = new THREE.PointLight('#ffca8a', 0.55, 6, 1.9);
+      bulb.position.set(x,3.2,-0.8);
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(0.22,0.25,16), mat('#3b2d25',0.4,0.12));
+      shade.position.copy(bulb.position); shade.rotation.x = Math.PI;
+      scene.add(bulb, shade);
     });
 
-    // subtle eye-line target
-    const eyeTarget = new THREE.Vector3(0.02, 1.45, -2.58);
+    // Characters
+    const loader = new GLTFLoader();
+    const rabbitGltf = await loader.loadAsync('../assets/characters/rabbit-rigged.glb');
+    const tortoiseGltf = await loader.loadAsync('../assets/characters/tortoise-rigged.glb');
+    const rabbit = rabbitGltf.scene;
+    const tortoise = tortoiseGltf.scene;
+    rabbit.position.set(-0.55, 0.0, -0.2); rabbit.rotation.y = THREE.MathUtils.degToRad(25); rabbit.scale.setScalar(1.02);
+    tortoise.position.set(0.68, 0.0, -0.15); tortoise.rotation.y = THREE.MathUtils.degToRad(-20); tortoise.scale.setScalar(1.05);
+    [rabbit,tortoise].forEach(c=>{c.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); scene.add(c);});
 
-    // animation handling: prefer embedded, fallback procedural
+    // Motion system (always visible movement)
     const mixers = [];
-    const procedural = [];
-
-    function setupClipPlayback(gltf, root, speed=0.2) {
-      if (!gltf.animations || gltf.animations.length === 0) return false;
-      const mixer = new THREE.AnimationMixer(root);
-      const idleish = gltf.animations.find(c => /idle|breathe|sit|look/i.test(c.name)) || gltf.animations[0];
-      const action = mixer.clipAction(idleish);
-      action.play();
-      action.setEffectiveTimeScale(speed);
-      action.setEffectiveWeight(1.0);
-      mixers.push(mixer);
+    function playIdle(gltf, root, speed) {
+      if (!gltf.animations?.length) return false;
+      const mx = new THREE.AnimationMixer(root);
+      const clip = gltf.animations.find(a=>/idle|sit|breathe|talk/i.test(a.name)) || gltf.animations[0];
+      const action = mx.clipAction(clip); action.play(); action.timeScale = speed;
+      mixers.push(mx);
       return true;
     }
+    const rabbitHasAnim = playIdle(rabbitGltf, rabbit, 0.9);
+    const tortoiseHasAnim = playIdle(tortoiseGltf, tortoise, 0.78);
 
-    const rabbitHasClip = setupClipPlayback(rabbitGltf, rabbit, 0.24);
-    const tortoiseHasClip = setupClipPlayback(tortoiseGltf, tortoise, 0.18);
-
-    function findBoneLike(root, names) {
+    function findBone(root, keys) {
       let hit = null;
-      root.traverse(o => {
-        if (hit) return;
-        if (!o.isBone) return;
-        const n = o.name.toLowerCase();
-        if (names.some(k => n.includes(k))) hit = o;
-      });
+      root.traverse(o=>{ if (!hit && o.isBone && keys.some(k=>o.name.toLowerCase().includes(k))) hit = o; });
       return hit;
     }
+    const rb = { head: findBone(rabbit,['head','neck']), arm: findBone(rabbit,['arm','hand']), chest: findBone(rabbit,['spine','chest']) };
+    const tb = { head: findBone(tortoise,['head','neck']), arm: findBone(tortoise,['arm','hand']), chest: findBone(tortoise,['spine','chest','shell']) };
 
-    if (!rabbitHasClip) {
-      const chest = findBoneLike(rabbit, ['spine','chest']);
-      const head = findBoneLike(rabbit, ['head','neck']);
-      const arm = findBoneLike(rabbit, ['arm','hand','forearm']);
-      procedural.push({ root:rabbit, chest, head, arm, phase:0.0, amp:1.0 });
+    const SHOTS = [
+      { d:4,  p:[-2.8,1.45,3.8],  l:[0.1,1.1,-0.3], fov:38 },
+      { d:5,  p:[-1.2,1.35,2.1],  l:[0.05,1.05,-0.2], fov:44 },
+      { d:4,  p:[-0.55,1.32,1.1], l:[0.55,1.02,-0.1], fov:50 },
+      { d:4,  p:[0.75,1.30,1.15], l:[-0.45,1.04,-0.15], fov:50 },
+      { d:5,  p:[-3.4,1.4,0.2],   l:[0.0,1.0,-0.2], fov:35 }
+    ];
+    const shotTotal = SHOTS.reduce((a,s)=>a+s.d,0);
+
+    function applyCamera(t) {
+      let acc = 0, i = 0;
+      for (; i<SHOTS.length; i++) {
+        if (t < acc + SHOTS[i].d) break;
+        acc += SHOTS[i].d;
+      }
+      const a = SHOTS[i % SHOTS.length];
+      const b = SHOTS[(i + 1) % SHOTS.length];
+      const local = THREE.MathUtils.smoothstep((t - acc) / a.d, 0, 1);
+      camera.position.set(
+        THREE.MathUtils.lerp(a.p[0], b.p[0], local),
+        THREE.MathUtils.lerp(a.p[1], b.p[1], local),
+        THREE.MathUtils.lerp(a.p[2], b.p[2], local)
+      );
+      const lx = THREE.MathUtils.lerp(a.l[0], b.l[0], local);
+      const ly = THREE.MathUtils.lerp(a.l[1], b.l[1], local);
+      const lz = THREE.MathUtils.lerp(a.l[2], b.l[2], local);
+      camera.lookAt(lx, ly, lz);
+      camera.fov = THREE.MathUtils.lerp(a.fov, b.fov, local);
+      camera.updateProjectionMatrix();
     }
-    if (!tortoiseHasClip) {
-      const chest = findBoneLike(tortoise, ['spine','chest','shell']);
-      const head = findBoneLike(tortoise, ['head','neck']);
-      const arm = findBoneLike(tortoise, ['arm','hand','forearm']);
-      procedural.push({ root:tortoise, chest, head, arm, phase:1.2, amp:0.8 });
-    }
-
-    const rail = new CameraRail(camera, { profile: 'dolly' });
-    rail.setControlPoints([
-      [-7.8, 2.4, 3.7],
-      [-5.5, 1.8, 1.4],
-      [-3.5, 1.55, -0.6],
-      [-1.2, 1.42, -1.65],
-      [1.9, 1.48, -1.52],
-      [4.8, 1.95, 0.15],
-      [6.9, 2.4, 2.5]
-    ]);
-
-    rail.setSequence([
-      { duration: 8.0, from: 0.0, to: 0.22, lens:'35mm', operator:'dolly', easing:'easeInOutSine', focusPoint:[0.0, 1.4, -2.55], dof:{ aperture:0.008, maxBlur:0.004 }, grading:{ exposure:0.94, contrast:1.03, saturation:0.88, tint:'#ffd5c0' } },
-      { duration: 9.2, from: 0.22, to: 0.47, lens:'50mm', operator:'dolly', easing:'easeInOutCubic', focusPoint:[-0.42, 1.45, -2.52], dof:{ aperture:0.01, maxBlur:0.0052 }, grading:{ exposure:0.93, contrast:1.04, saturation:0.9, tint:'#ffcfb9' } },
-      { duration: 7.2, from: 0.47, to: 0.68, lens:'85mm', operator:'dolly', easing:'easeInOutSine', focusPoint:[0.38, 1.43, -2.56], dof:{ aperture:0.011, maxBlur:0.0058 }, grading:{ exposure:0.91, contrast:1.05, saturation:0.87, tint:'#ffd7bd' } },
-      { duration: 8.6, from: 0.68, to: 1.0, lens:'35mm', operator:'dolly', easing:'easeInOutCubic', focusPoint:[0.02, 1.44, -2.58], dof:{ aperture:0.0085, maxBlur:0.0045 }, grading:{ exposure:0.94, contrast:1.03, saturation:0.9, tint:'#ffd8c8' } }
-    ]);
-
-    // optional ambience
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = AC ? new AC() : null;
-    let audioStarted = false;
-
-    function makeNoiseBuffer(seconds = 2) {
-      const b = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * seconds), audioCtx.sampleRate);
-      const d = b.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-      return b;
-    }
-
-    function startAudio() {
-      if (!audioCtx || audioStarted) return;
-      audioStarted = true;
-      const master = audioCtx.createGain();
-      master.gain.value = 0.19;
-      master.connect(audioCtx.destination);
-
-      // rain bed
-      const rainSrc = audioCtx.createBufferSource();
-      rainSrc.buffer = makeNoiseBuffer(3);
-      rainSrc.loop = true;
-      const rainBP = audioCtx.createBiquadFilter(); rainBP.type = 'bandpass'; rainBP.frequency.value = 2400; rainBP.Q.value = 0.6;
-      const rainGain = audioCtx.createGain(); rainGain.gain.value = 0.05;
-      rainSrc.connect(rainBP).connect(rainGain).connect(master);
-      rainSrc.start();
-
-      // café low murmur
-      const murmur = audioCtx.createOscillator();
-      murmur.type = 'sawtooth'; murmur.frequency.value = 86;
-      const murmurLP = audioCtx.createBiquadFilter(); murmurLP.type = 'lowpass'; murmurLP.frequency.value = 180;
-      const murmurGain = audioCtx.createGain(); murmurGain.gain.value = 0.015;
-      murmur.connect(murmurLP).connect(murmurGain).connect(master);
-      murmur.start();
-
-      // soft lo-fi pad
-      const pad = audioCtx.createOscillator();
-      pad.type = 'triangle';
-      pad.frequency.value = 196.0; // G3
-      const padGain = audioCtx.createGain(); padGain.gain.value = 0.012;
-      const padLP = audioCtx.createBiquadFilter(); padLP.type = 'lowpass'; padLP.frequency.value = 900;
-      pad.connect(padLP).connect(padGain).connect(master);
-      pad.start();
-
-      let chordStep = 0;
-      const chord = [196.0, 174.61, 220.0, 164.81];
-      setInterval(() => {
-        chordStep = (chordStep + 1) % chord.length;
-        pad.frequency.setTargetAtTime(chord[chordStep], audioCtx.currentTime, 1.6);
-      }, 4600);
-
-      audioHint.style.opacity = 0;
-      setTimeout(() => audioHint.remove(), 700);
-    }
-
-    addEventListener('pointerdown', () => {
-      if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      startAudio();
-    }, { once: false });
 
     const clock = new THREE.Clock();
     function animate() {
       requestAnimationFrame(animate);
       const t = clock.getElapsedTime();
       const dt = clock.getDelta();
+      const loopT = t % SET.loop;
+      const shotT = loopT % shotTotal;
 
-      mixers.forEach(m => m.update(dt));
+      mixers.forEach(m=>m.update(dt));
 
-      if (procedural.length) {
-        procedural.forEach((p, i) => {
-          const b = Math.sin(t * (0.9 + i * 0.07) + p.phase) * 0.01 * p.amp;
-          p.root.position.y = (i === 0 ? 0.03 : 0.0) + b;
-          p.root.rotation.y += Math.sin(t * 0.22 + p.phase) * 0.00045;
-          if (p.chest) p.chest.rotation.x = Math.sin(t * 1.4 + p.phase) * 0.03 * p.amp;
-          if (p.head) {
-            p.head.rotation.y = Math.sin(t * 0.38 + p.phase) * 0.08;
-            p.head.rotation.x = Math.sin(t * 0.54 + p.phase * 0.7) * 0.03;
-          }
-          if (p.arm) p.arm.rotation.z = Math.sin(t * 0.5 + p.phase * 1.2) * 0.045;
-        });
+      // beat sheet 0-24s
+      const beat = loopT;
+      const breatheR = Math.sin(t * 1.7) * 0.02;
+      const breatheT = Math.sin(t * 1.2 + 0.6) * 0.015;
+      rabbit.position.y = breatheR;
+      tortoise.position.y = breatheT;
+
+      if (rb.chest) rb.chest.rotation.x = breatheR * 0.7;
+      if (tb.chest) tb.chest.rotation.x = breatheT * 0.8;
+
+      let rabbitGesture = 0, tortoiseNod = 0;
+      if (beat > 4 && beat < 8) rabbitGesture = Math.sin((beat-4) * Math.PI/4) * 0.35;
+      if (beat > 8 && beat < 12) tortoiseNod = Math.sin((beat-8) * Math.PI/4) * 0.28;
+      if (beat > 16 && beat < 20) rabbitGesture += Math.sin((beat-16)*Math.PI*2) * 0.16;
+
+      if (!rabbitHasAnim && rb.arm) rb.arm.rotation.x = -0.3 + rabbitGesture;
+      if (!tortoiseHasAnim && tb.arm) tb.arm.rotation.x = -0.12 + tortoiseNod * 0.5;
+      if (rb.head) rb.head.rotation.y = 0.08 + Math.sin(t*0.9) * 0.06;
+      if (tb.head) tb.head.rotation.y = -0.09 + Math.sin(t*0.65+1.4) * 0.05;
+      if (tb.head) tb.head.rotation.x = -0.04 + tortoiseNod * 0.3;
+
+      // shared glance to window 12-16s
+      if (beat > 12 && beat < 16) {
+        rabbit.lookAt(-3.8, 2.1, -4.8);
+        tortoise.lookAt(-3.8, 2.0, -4.8);
       }
 
-      // subtle chemistry micro-turns even with clips
-      rabbit.lookAt(eyeTarget.x + Math.sin(t * 0.23) * 0.08, 1.38 + Math.sin(t*0.37)*0.03, eyeTarget.z);
-      tortoise.lookAt(eyeTarget.x + Math.cos(t * 0.2) * 0.07, 1.33 + Math.sin(t*0.31 + 1.4)*0.03, eyeTarget.z);
+      applyCamera(shotT);
 
-      rail.update((t * 0.35) % 33, post);
-
-      // rain and steam animation
-      const rp = rain.geometry.attributes.position.array;
-      for (let i=0;i<rainCount;i++) {
-        rp[i*3+1] -= rainVel[i] * dt;
-        rp[i*3] += Math.sin(t * 0.8 + i) * 0.0008;
-        if (rp[i*3+1] < 0.86) {
-          rp[i*3+1] = 5.15;
-          rp[i*3] = THREE.MathUtils.randFloat(3.9, 7.9);
-        }
+      // rain movement + neon sweep reflection
+      const arr = rain.geometry.attributes.position.array;
+      for (let i=0; i<count; i++) {
+        arr[i*3+1] -= vel[i] * dt;
+        if (arr[i*3+1] < 0.9) arr[i*3+1] = 4.2;
       }
       rain.geometry.attributes.position.needsUpdate = true;
+      glass.emissive = new THREE.Color('#351f28');
+      glass.emissiveIntensity = 0.08 + Math.max(0, Math.sin((t/7) * Math.PI * 2)) * 0.12;
 
-      steam.forEach((s, i) => {
-        s.position.y += 0.035 * dt + Math.sin(t * 0.8 + i) * 0.002;
-        s.position.x += Math.sin(t * 0.9 + i * 1.3) * 0.0009;
-        s.material.opacity = 0.06 + Math.sin(t * 0.7 + i) * 0.04;
-        if (s.position.y > 2.35) s.position.y = 1.18;
-      });
-
-      practical.intensity = 1.35 + Math.sin(t * 0.6) * 0.06;
-      redAccent.intensity = 0.9 + Math.sin(t * 0.35 + 0.9) * 0.08;
-      greenAccent.intensity = 0.72 + Math.sin(t * 0.28 + 2.1) * 0.05;
-
-      post.render(dt, t);
+      composer.render();
     }
     animate();
 
     addEventListener('resize', () => {
-      camera.aspect = innerWidth / innerHeight;
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-      post.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
     });
   </script>
 </body>
