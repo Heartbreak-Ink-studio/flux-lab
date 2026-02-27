@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STRENGTH DEMO — Flux ⚡</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0a12; font-family: "Courier New", monospace; }
+    canvas { display: block; }
+
+    .hud {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 20;
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(8,10,18,0.55);
+      backdrop-filter: blur(6px);
+      font-size: 11px;
+      line-height: 1.45;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.9);
+      max-width: min(90vw, 420px);
+    }
+    .hud b { color: #7ab5ff; }
+    .hud .muted { color: rgba(255,255,255,0.62); }
+
+    .back {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 30;
+      text-decoration: none;
+      color: #fff;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      border: 1px solid rgba(255,255,255,0.28);
+      background: rgba(9, 11, 19, 0.6);
+      padding: 10px 12px;
+      transition: all .2s ease;
+    }
+    .back:hover { border-color: #4da3ff; color: #4da3ff; }
+
+    .watermark {
+      position: fixed;
+      right: 14px;
+      bottom: 12px;
+      color: rgba(255,255,255,.32);
+      letter-spacing: .18em;
+      font-size: 11px;
+      z-index: 20;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <a class="back" href="../">← GALLERY</a>
+  <div class="hud" id="hud">
+    <div><b>STRENGTH DEMO</b> — procedural cinematic system</div>
+    <div class="muted">Drag = orbit / tilt • Wheel or pinch = zoom</div>
+    <div class="muted">Move pointer = drive turbulence & energy flow</div>
+    <div class="muted">1/2/3 = camera styles • Space = impulse • H = hide HUD</div>
+  </div>
+  <div class="watermark">HEARTBREAK INK</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0a0a12');
+    scene.fog = new THREE.FogExp2('#0a0a12', 0.055);
+
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+    camera.position.set(0, 1.65, 8.6);
+
+    // HBI 3-point lighting
+    const key = new THREE.DirectionalLight('#4488ff', 2.0);
+    key.position.set(3, 4, 2);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    scene.add(key);
+
+    const fill = new THREE.DirectionalLight('#ff6633', 0.8);
+    fill.position.set(-3, 2, -1);
+    fill.castShadow = true;
+    fill.shadow.mapSize.set(2048, 2048);
+    scene.add(fill);
+
+    const rim = new THREE.DirectionalLight('#ffffff', 1.5);
+    rim.position.set(0, 3, -3);
+    rim.castShadow = true;
+    rim.shadow.mapSize.set(2048, 2048);
+    scene.add(rim);
+
+    scene.add(new THREE.AmbientLight('#1e2540', 0.24));
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    // Ground sheen
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(20, 96),
+      new THREE.MeshStandardMaterial({ color: '#0b0f1b', metalness: 0.75, roughness: 0.35 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -2.5;
+    ground.receiveShadow = true;
+    group.add(ground);
+
+    // Hero: procedural torus knot + shell
+    const core = new THREE.Mesh(
+      new THREE.TorusKnotGeometry(1.65, 0.44, 380, 48, 2, 5),
+      new THREE.MeshPhysicalMaterial({
+        color: '#7cb9ff',
+        emissive: '#214b96',
+        emissiveIntensity: 0.9,
+        metalness: 0.92,
+        roughness: 0.22,
+        clearcoat: 1,
+        clearcoatRoughness: 0.2
+      })
+    );
+    core.castShadow = true;
+    core.receiveShadow = true;
+    group.add(core);
+
+    const shell = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(3.2, 4),
+      new THREE.MeshStandardMaterial({
+        color: '#4da3ff',
+        emissive: '#163e7c',
+        emissiveIntensity: 0.18,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.24
+      })
+    );
+    group.add(shell);
+
+    // Instanced ribbons / shards
+    const shardCount = 420;
+    const shardGeo = new THREE.BoxGeometry(0.05, 0.28, 0.05);
+    const shardMat = new THREE.MeshStandardMaterial({
+      color: '#7fb6ff', emissive: '#1d3f7d', emissiveIntensity: 0.8, metalness: 0.8, roughness: 0.25
+    });
+    const shards = new THREE.InstancedMesh(shardGeo, shardMat, shardCount);
+    shards.castShadow = true;
+    group.add(shards);
+
+    const dummy = new THREE.Object3D();
+    const shardData = Array.from({ length: shardCount }, (_, i) => {
+      const a = Math.random() * Math.PI * 2;
+      const b = Math.random() * Math.PI * 2;
+      const r = 2.5 + Math.random() * 2.8;
+      return {
+        a, b, r,
+        speed: 0.15 + Math.random() * 0.6,
+        wobble: 0.3 + Math.random() * 1.4,
+        seed: Math.random() * 100,
+        hue: 0.55 + Math.random() * 0.12
+      };
+    });
+
+    // Dust field
+    const dustCount = 1100;
+    const dustPos = new Float32Array(dustCount * 3);
+    const dustVel = new Float32Array(dustCount);
+    for (let i = 0; i < dustCount; i++) {
+      dustPos[i * 3] = (Math.random() - 0.5) * 26;
+      dustPos[i * 3 + 1] = (Math.random() - 0.3) * 14;
+      dustPos[i * 3 + 2] = (Math.random() - 0.5) * 26;
+      dustVel[i] = 0.008 + Math.random() * 0.03;
+    }
+    const dustGeo = new THREE.BufferGeometry();
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+    const dust = new THREE.Points(
+      dustGeo,
+      new THREE.PointsMaterial({ color: '#a6c6ff', size: 0.03, transparent: true, opacity: 0.55, depthWrite: false })
+    );
+    group.add(dust);
+
+    // Post
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.82, 0.4, 0.2);
+    composer.addPass(bloom);
+
+    const grainPass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        time: { value: 0 },
+        amount: { value: 0.045 }
+      },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float time;
+        uniform float amount;
+        varying vec2 vUv;
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+        void main(){
+          vec4 col = texture2D(tDiffuse, vUv);
+          float noise = hash(vUv * (time * 0.8 + 41.0)) - 0.5;
+          col.rgb += noise * amount;
+          gl_FragColor = col;
+        }
+      `
+    });
+    composer.addPass(grainPass);
+
+    const vignettePass = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, offset: { value: 1.0 }, darkness: { value: 1.15 } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);} `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float offset;
+        uniform float darkness;
+        varying vec2 vUv;
+        void main(){
+          vec4 c = texture2D(tDiffuse, vUv);
+          vec2 uv = (vUv - 0.5) * vec2(offset);
+          float vig = smoothstep(0.86, 0.2, dot(uv, uv));
+          c.rgb *= mix(darkness, 1.0, vig);
+          gl_FragColor = c;
+        }
+      `
+    });
+    composer.addPass(vignettePass);
+
+    // Input + stable camera rig
+    const input = {
+      tx: 0, ty: 0, x: 0, y: 0,
+      down: false, lastX: 0, lastY: 0,
+      yaw: 0, pitch: 0.15,
+      radius: 8.6, targetRadius: 8.6,
+      mode: 1,
+      impulse: 0,
+      hud: true
+    };
+
+    addEventListener('pointermove', (e) => {
+      input.tx = (e.clientX / innerWidth) * 2 - 1;
+      input.ty = (e.clientY / innerHeight) * 2 - 1;
+      if (input.down) {
+        input.yaw -= (e.clientX - input.lastX) * 0.004;
+        input.pitch -= (e.clientY - input.lastY) * 0.003;
+        input.pitch = THREE.MathUtils.clamp(input.pitch, -0.3, 0.75);
+      }
+      input.lastX = e.clientX;
+      input.lastY = e.clientY;
+    });
+    addEventListener('pointerdown', (e) => { input.down = true; input.lastX = e.clientX; input.lastY = e.clientY; });
+    addEventListener('pointerup', () => input.down = false);
+    addEventListener('wheel', (e) => {
+      input.targetRadius = THREE.MathUtils.clamp(input.targetRadius + e.deltaY * 0.006, 5.6, 14);
+    }, { passive: true });
+
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Digit1') input.mode = 1;
+      if (e.code === 'Digit2') input.mode = 2;
+      if (e.code === 'Digit3') input.mode = 3;
+      if (e.code === 'Space') input.impulse = Math.min(input.impulse + 1.5, 4);
+      if (e.code === 'KeyH') {
+        input.hud = !input.hud;
+        document.getElementById('hud').style.display = input.hud ? '' : 'none';
+      }
+    });
+
+    const touchCache = [];
+    addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) touchCache.push(t);
+    }, { passive: true });
+    addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        const a = e.touches[0], b = e.touches[1];
+        const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        if (touchCache.length >= 2) {
+          const pa = touchCache[0], pb = touchCache[1];
+          const pd = Math.hypot(pa.clientX - pb.clientX, pa.clientY - pb.clientY);
+          input.targetRadius = THREE.MathUtils.clamp(input.targetRadius - (d - pd) * 0.02, 5.6, 14);
+        }
+      }
+      const t = e.touches[0];
+      if (t) {
+        input.tx = (t.clientX / innerWidth) * 2 - 1;
+        input.ty = (t.clientY / innerHeight) * 2 - 1;
+      }
+    }, { passive: true });
+
+    // Rhythm engine (web-native beat layer)
+    const bpm = 112;
+    const beatSec = 60 / bpm;
+    const clock = new THREE.Clock();
+
+    function animate() {
+      const t = clock.getElapsedTime();
+      const dt = Math.min(clock.getDelta(), 0.05);
+
+      input.x = THREE.MathUtils.lerp(input.x, input.tx, 0.06);
+      input.y = THREE.MathUtils.lerp(input.y, input.ty, 0.06);
+      input.radius = THREE.MathUtils.lerp(input.radius, input.targetRadius, 0.1);
+      input.impulse = THREE.MathUtils.lerp(input.impulse, 0, 0.04);
+
+      // Rhythm pulse (deterministic + smooth)
+      const phase = (t % beatSec) / beatSec;
+      const beat = Math.exp(-22.0 * phase) + 0.35 * Math.exp(-18.0 * ((phase + 0.5) % 1.0));
+      const energy = beat + Math.abs(input.x) * 0.38 + Math.abs(input.y) * 0.22 + input.impulse;
+
+      // Camera modes: all damped to avoid jitter
+      const autoYaw = t * 0.16;
+      const modeOffset = input.mode === 1 ? 0 : input.mode === 2 ? Math.sin(t * 0.23) * 0.5 : Math.sin(t * 0.13) * 1.0;
+      const yaw = input.yaw + autoYaw + modeOffset;
+      const pitch = input.pitch + (input.mode === 3 ? Math.sin(t * 0.32) * 0.06 : 0.0);
+      const focus = new THREE.Vector3(input.x * 0.55, Math.sin(t * 0.35) * 0.18, input.y * 0.55);
+      const r = input.radius + Math.sin(t * 0.42) * 0.22;
+      const targetPos = new THREE.Vector3(
+        Math.cos(yaw) * Math.cos(pitch) * r,
+        Math.sin(pitch) * r + 0.3,
+        Math.sin(yaw) * Math.cos(pitch) * r
+      );
+
+      camera.position.lerp(targetPos, 0.08);
+      camera.lookAt(focus);
+
+      // Breathing lights
+      key.intensity = 1.8 + beat * 0.45;
+      fill.intensity = 0.7 + beat * 0.18;
+      rim.intensity = 1.35 + beat * 0.3;
+
+      // Hero dynamics
+      core.rotation.x += dt * (0.18 + energy * 0.02);
+      core.rotation.y += dt * (0.27 + energy * 0.04);
+      const s = 1 + energy * 0.08;
+      core.scale.setScalar(s);
+
+      shell.rotation.x -= dt * (0.08 + beat * 0.03);
+      shell.rotation.y += dt * (0.12 + beat * 0.05);
+      shell.material.opacity = 0.16 + energy * 0.12;
+
+      // Procedural shards
+      for (let i = 0; i < shardCount; i++) {
+        const p = shardData[i];
+        const tt = t * p.speed + p.seed;
+        const rr = p.r + Math.sin(tt * 1.7 + input.x * 2.4) * 0.2 + energy * 0.35;
+        const x = Math.cos(p.a + tt * 0.4) * rr;
+        const y = Math.sin(p.b + tt * 0.6) * (1.4 + p.wobble) + Math.sin(tt * 2.2) * 0.25;
+        const z = Math.sin(p.a + tt * 0.5) * rr;
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(tt * 0.9, tt * 0.6, tt * 1.1);
+        const sc = 0.8 + beat * 1.2;
+        dummy.scale.set(1, sc, 1);
+        dummy.updateMatrix();
+        shards.setMatrixAt(i, dummy.matrix);
+      }
+      shards.instanceMatrix.needsUpdate = true;
+
+      // Dust drift
+      const pos = dustGeo.attributes.position.array;
+      for (let i = 0; i < dustCount; i++) {
+        const i3 = i * 3;
+        pos[i3 + 1] += dustVel[i] * (0.22 + beat * 0.6);
+        pos[i3] += Math.sin(t * 0.4 + i * 0.17 + input.x * 3.5) * 0.0015;
+        pos[i3 + 2] += Math.cos(t * 0.5 + i * 0.13 + input.y * 3.2) * 0.0015;
+        if (pos[i3 + 1] > 8) pos[i3 + 1] = -6;
+      }
+      dustGeo.attributes.position.needsUpdate = true;
+
+      // Post modulation (controlled)
+      bloom.strength = 0.66 + Math.min(energy, 1.5) * 0.22;
+      grainPass.uniforms.time.value = t;
+
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
+      bloom.setSize(innerWidth, innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
