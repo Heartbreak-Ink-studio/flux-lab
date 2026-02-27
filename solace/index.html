@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>solace — flux showcase</title>
+  <style>
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#070912; }
+    #app { width:100%; height:100%; }
+    #watermark { position:fixed; right:16px; bottom:12px; color:rgba(255,255,255,.3); font:11px monospace; letter-spacing:.16em; z-index:20; }
+    #hint { position:fixed; top:16px; left:50%; transform:translateX(-50%); color:rgba(210,224,255,.75); font:11px monospace; letter-spacing:.12em; z-index:30; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <a href="../" style="position:fixed;top:16px;left:16px;z-index:9999;color:#4488ff;font-family:monospace;font-size:0.8rem;text-decoration:none;opacity:0.6;letter-spacing:0.1em;padding:6px 12px;border:1px solid rgba(68,136,255,0.3);border-radius:4px;background:rgba(10,10,18,0.8);transition:opacity 0.3s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">← GALLERY</a>
+  <div id="app"></div>
+  <div id="hint">tap for audio</div>
+  <div id="watermark">HEARTBREAK INK</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { AssetLoader } from '../lib/asset-loader.js';
+    import { CameraRail } from '../lib/camera-rail.js';
+    import { AnimationManager } from '../lib/animation-manager.js';
+    import { PostStack } from '../lib/post-stack.js';
+
+    const app = document.getElementById('app');
+    const hint = document.getElementById('hint');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#070912');
+    scene.fog = new THREE.FogExp2('#070912', 0.03);
+
+    const camera = new THREE.PerspectiveCamera(54, innerWidth/innerHeight, 0.1, 500);
+    camera.position.set(-26, 7, 18);
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.9;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    app.appendChild(renderer.domElement);
+
+    const key = new THREE.DirectionalLight('#5d8dff', 1.55);
+    key.position.set(9, 13, 7);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -30; key.shadow.camera.right = 30;
+    key.shadow.camera.top = 30; key.shadow.camera.bottom = -30;
+    key.shadow.camera.near = 1; key.shadow.camera.far = 120;
+    key.shadow.bias = -0.0002;
+    scene.add(key);
+
+    const fill = new THREE.PointLight('#ff6a3c', 0.68, 45, 2.2);
+    fill.position.set(-8, 4, -9);
+    scene.add(fill);
+
+    const rim = new THREE.DirectionalLight('#d7e1ff', 1.05);
+    rim.position.set(-6, 7, -15);
+    scene.add(rim);
+    scene.add(new THREE.AmbientLight('#1c2234', 0.22));
+
+    // rooftop world
+    const roof = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 60),
+      new THREE.MeshStandardMaterial({ color:'#101522', roughness:0.8, metalness:0.1 })
+    );
+    roof.rotation.x = -Math.PI/2;
+    roof.receiveShadow = true;
+    scene.add(roof);
+
+    const puddles = [];
+    for (let i = 0; i < 22; i++) {
+      const p = new THREE.Mesh(
+        new THREE.CircleGeometry(THREE.MathUtils.randFloat(0.6, 2.4), 24),
+        new THREE.MeshStandardMaterial({ color:'#19283e', roughness:0.12, metalness:0.45, transparent:true, opacity:0.7 })
+      );
+      p.rotation.x = -Math.PI/2;
+      p.position.set(THREE.MathUtils.randFloat(-35,35), 0.02, THREE.MathUtils.randFloat(-24,24));
+      p.receiveShadow = true;
+      puddles.push(p);
+      scene.add(p);
+    }
+
+    const parapetMat = new THREE.MeshStandardMaterial({ color:'#1b2232', roughness:0.9 });
+    const walls = [
+      [80, 1.5, 1, 0, 0.75, -30], [80, 1.5, 1, 0, 0.75, 30],
+      [1, 1.5, 60, -40, 0.75, 0], [1, 1.5, 60, 40, 0.75, 0]
+    ];
+    walls.forEach(([w,h,d,x,y,z]) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), parapetMat);
+      m.position.set(x,y,z); m.castShadow = m.receiveShadow = true; scene.add(m);
+    });
+
+    function addVent(x,z,s=1){
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.1*s,1.2*s,1.1*s), new THREE.MeshStandardMaterial({ color:'#2d3443', roughness:0.8, metalness:0.3 }));
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.35*s,0.35*s,0.55*s,16), new THREE.MeshStandardMaterial({ color:'#77809a', roughness:0.4, metalness:0.8 }));
+      top.position.y = 0.9*s;
+      g.add(body, top);
+      g.position.set(x,0.6*s,z);
+      g.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+      scene.add(g);
+      return g;
+    }
+
+    const vents = [];
+    for (let i=0;i<18;i++) vents.push(addVent(THREE.MathUtils.randFloat(-34,34), THREE.MathUtils.randFloat(-22,22), THREE.MathUtils.randFloat(0.8,1.6)));
+
+    function addNeon(x,z,color){
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,4.8,10), new THREE.MeshStandardMaterial({ color:'#2b3140', roughness:0.9 }));
+      pole.position.set(x,2.4,z); pole.castShadow = true; scene.add(pole);
+      const tube = new THREE.Mesh(new THREE.BoxGeometry(0.2,1.6,0.2), new THREE.MeshBasicMaterial({ color }));
+      tube.position.set(x,4.2,z); scene.add(tube);
+      const l = new THREE.PointLight(color, 0.55, 18, 2);
+      l.position.set(x,4.1,z); scene.add(l);
+      return l;
+    }
+
+    const neonA = addNeon(-22,-16,'#2da1ff');
+    const neonB = addNeon(25,14,'#ff4f9f');
+
+    // rain streaks
+    const rainCount = 1300;
+    const rainGeo = new THREE.BufferGeometry();
+    const rainPos = new Float32Array(rainCount*3);
+    const rainVel = new Float32Array(rainCount);
+    for (let i=0;i<rainCount;i++) {
+      rainPos[i*3] = THREE.MathUtils.randFloat(-42,42);
+      rainPos[i*3+1] = THREE.MathUtils.randFloat(1,36);
+      rainPos[i*3+2] = THREE.MathUtils.randFloat(-30,30);
+      rainVel[i] = THREE.MathUtils.randFloat(15,23);
+    }
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+    const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color:'#9fc1ff', size:0.06, transparent:true, opacity:0.45, depthWrite:false }));
+    scene.add(rain);
+
+    // city lights background
+    const skyline = new THREE.Group();
+    for (let i=0;i<90;i++) {
+      const h = THREE.MathUtils.randFloat(4,20);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(THREE.MathUtils.randFloat(1.6,4.5), h, THREE.MathUtils.randFloat(1.6,4.5)), new THREE.MeshStandardMaterial({ color:'#0f1420', roughness:0.95 }));
+      const side = Math.random() > 0.5 ? -1 : 1;
+      b.position.set(THREE.MathUtils.randFloat(-95,95), h*0.5, side*THREE.MathUtils.randFloat(42,58));
+      b.castShadow = true;
+      skyline.add(b);
+      if (Math.random() > 0.28) {
+        const win = new THREE.PointLight(Math.random()>0.5?'#75a8ff':'#ff8a6f', 0.18, 9, 2);
+        win.position.copy(b.position).add(new THREE.Vector3(0, THREE.MathUtils.randFloat(0.8,h*0.8), 0));
+        skyline.add(win);
+      }
+    }
+    scene.add(skyline);
+
+    // soldier + animation manager
+    const assets = new AssetLoader({ manifestPath: '../assets/manifest.json' });
+    const soldierAsset = await assets.loadAsset('soldier-main', { clone:false });
+    const soldier = soldierAsset.scene;
+    soldier.scale.setScalar(1.35);
+    soldier.position.set(-20, 0, 0.5);
+    soldier.rotation.y = -Math.PI/2;
+    soldier.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+    scene.add(soldier);
+
+    const anim = new AnimationManager(soldier);
+    const walkClip = soldierAsset.animations.find(a => /walk/i.test(a.name)) || soldierAsset.animations[0];
+    const idleClip = soldierAsset.animations.find(a => /idle/i.test(a.name)) || soldierAsset.animations[1] || soldierAsset.animations[0];
+    anim.clips.set('Walk', walkClip);
+    anim.clips.set('Idle', idleClip);
+    const walkAction = anim.mixer.clipAction(walkClip, soldier); walkAction.enabled = true; walkAction.timeScale = 0.88;
+    const idleAction = anim.mixer.clipAction(idleClip, soldier); idleAction.enabled = true;
+    anim.actions.set('Walk', walkAction); anim.actions.set('Idle', idleAction);
+    anim.defineMarkers('Walk', [
+      { type:'footstep', time: walkClip.duration * 0.13 },
+      { type:'footstep', time: walkClip.duration * 0.62 }
+    ]);
+    anim.play('Walk', { fadeIn:0.4 });
+
+    const post = new PostStack(renderer, scene, camera);
+    post.setBloom({ strength:0.4, radius:0.34, threshold:0.36 });
+    post.setAnamorphic({ intensity:0.1, threshold:0.9, stretch:1.7 });
+    post.setDOF({ aperture:0.009, maxBlur:0.004 });
+    post.setGrading({ exposure:0.95, contrast:1.04, saturation:0.92, tint:'#c9d8ff' });
+
+    const rail = new CameraRail(camera, { profile:'dolly' });
+    rail.setControlPoints([
+      [-30, 8.5, 20],
+      [-22, 5.5, 10],
+      [-14, 2.8, 4.5],
+      [-8, 2.2, 2.5],
+      [0, 2.0, 2.0],
+      [8, 2.4, 3.4],
+      [18, 4.6, 8.0],
+      [29, 9.2, 16]
+    ]);
+
+    rail.setSequence([
+      { duration:6.5, from:0.0, to:0.27, lens:'24mm', operator:'dolly', easing:'easeInOutSine', grading:{ exposure:0.94, contrast:1.03, saturation:0.88, tint:'#c0d4ff' }, dof:{ aperture:0.008, maxBlur:0.004 } },
+      { duration:7.5, from:0.27, to:0.56, lens:'50mm', operator:'dolly', easing:'easeInOutCubic', grading:{ exposure:0.95, contrast:1.04, saturation:0.9, tint:'#bed0ff' }, dof:{ aperture:0.01, maxBlur:0.005 } },
+      { duration:4.8, from:0.56, to:0.66, lens:'85mm', operator:'dolly', easing:'easeInOutSine', grading:{ exposure:0.98, contrast:1.02, saturation:0.86, tint:'#ffccdf' }, dof:{ aperture:0.012, maxBlur:0.006 } },
+      { duration:7.2, from:0.66, to:1.0, lens:'35mm', operator:'dolly', easing:'easeInOutCubic', grading:{ exposure:0.95, contrast:1.05, saturation:0.9, tint:'#c6d7ff' }, dof:{ aperture:0.008, maxBlur:0.004 } }
+    ]);
+
+    const story = {
+      walkStartX: -20,
+      walkEndX: 15,
+      speed: 1.28,
+      pauseAt: 12.8,
+      pauseDur: 4.2
+    };
+
+    // audio
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const audio = AC ? new AC() : null;
+    let audioReady = false;
+    let footBus = null;
+    let rainGain = null;
+    let melodyGain = null;
+
+    function noiseBuffer(sec=2){
+      const b = audio.createBuffer(1, Math.floor(audio.sampleRate * sec), audio.sampleRate);
+      const d = b.getChannelData(0);
+      for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+      return b;
+    }
+
+    function initAudio() {
+      if (!audio || audioReady) return;
+      audioReady = true;
+      const master = audio.createGain();
+      master.gain.value = 0.26;
+      master.connect(audio.destination);
+
+      const rainSrc = audio.createBufferSource();
+      rainSrc.buffer = noiseBuffer(3);
+      rainSrc.loop = true;
+      const rainLP = audio.createBiquadFilter(); rainLP.type = 'bandpass'; rainLP.frequency.value = 2600; rainLP.Q.value = 0.75;
+      rainGain = audio.createGain(); rainGain.gain.value = 0.04;
+      rainSrc.connect(rainLP).connect(rainGain).connect(master);
+      rainSrc.start();
+
+      const city = audio.createOscillator(); city.type = 'sawtooth'; city.frequency.value = 54;
+      const cityLP = audio.createBiquadFilter(); cityLP.type = 'lowpass'; cityLP.frequency.value = 140;
+      const cityGain = audio.createGain(); cityGain.gain.value = 0.008;
+      city.connect(cityLP).connect(cityGain).connect(master); city.start();
+
+      footBus = audio.createGain(); footBus.gain.value = 0.3; footBus.connect(master);
+
+      const melodyOsc = audio.createOscillator(); melodyOsc.type = 'triangle'; melodyOsc.frequency.value = 329.63; // E4
+      melodyGain = audio.createGain(); melodyGain.gain.value = 0.0001;
+      melodyOsc.connect(melodyGain).connect(master);
+      melodyOsc.start();
+
+      hint.style.opacity = 0;
+    }
+
+    function stepSound(){
+      if (!audioReady || !footBus) return;
+      const t = audio.currentTime;
+      const n = audio.createBufferSource(); n.buffer = noiseBuffer(0.15);
+      const nf = audio.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 180;
+      const ng = audio.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(0.028, t + 0.01);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      n.connect(nf).connect(ng).connect(footBus);
+      n.start(t); n.stop(t + 0.1);
+    }
+
+    addEventListener('pointerdown', async () => {
+      if (!audio) return;
+      if (audio.state === 'suspended') await audio.resume();
+      initAudio();
+    }, { once:true });
+
+    const clock = new THREE.Clock();
+    const focusTarget = new THREE.Vector3();
+
+    function animate() {
+      const dt = Math.min(clock.getDelta(), 0.033);
+      const t = clock.elapsedTime;
+
+      const inMoment = t > story.pauseAt && t < story.pauseAt + story.pauseDur;
+
+      if (inMoment) {
+        if (anim.getState() !== 'Idle') anim.crossfadeTo('Idle', 0.45);
+        soldier.rotation.y = -Math.PI/2 + Math.sin((t-story.pauseAt)*0.7)*0.18;
+        focusTarget.set(soldier.position.x + 1.1, 1.58, soldier.position.z);
+        if (melodyGain && audioReady) {
+          melodyGain.gain.setTargetAtTime(0.028, audio.currentTime, 0.9);
+          if (rainGain) rainGain.gain.setTargetAtTime(0.03, audio.currentTime, 0.8);
+        }
+      } else {
+        if (anim.getState() !== 'Walk') anim.crossfadeTo('Walk', 0.35);
+        soldier.position.x += dt * story.speed;
+        soldier.position.z = 0.5 + Math.sin(t*0.85)*0.08;
+        soldier.rotation.y = -Math.PI/2;
+        focusTarget.set(soldier.position.x + 2.1, 1.4, soldier.position.z);
+        if (melodyGain && audioReady) melodyGain.gain.setTargetAtTime(0.0001, audio.currentTime, 1.2);
+      }
+
+      if (soldier.position.x > story.walkEndX) soldier.position.x = story.walkStartX;
+
+      anim.update(dt, (ev) => { if (ev.type === 'footstep' && !inMoment) stepSound(); });
+
+      key.intensity = 1.5 + Math.sin(t*0.25)*0.06;
+      fill.intensity = 0.66 + Math.sin(t*0.4 + 1.1)*0.03;
+      neonA.intensity = 0.5 + Math.sin(t*2.4)*0.06;
+      neonB.intensity = 0.52 + Math.sin(t*1.9 + 1.6)*0.06;
+      post.setBloom({ strength: 0.38 + Math.sin(t*0.35)*0.03 });
+
+      for (let i=0;i<puddles.length;i++) {
+        puddles[i].material.opacity = 0.58 + Math.sin(t*0.6 + i)*0.12;
+      }
+
+      for (let i=0;i<vents.length;i++) {
+        vents[i].position.y += Math.sin(t*0.8 + i) * 0.0008;
+      }
+
+      const rp = rain.geometry.attributes.position;
+      for (let i=0;i<rainCount;i++) {
+        const yIdx = i*3 + 1;
+        rp.array[yIdx] -= rainVel[i] * dt;
+        rp.array[i*3] += Math.sin(t*0.7 + i) * 0.002;
+        if (rp.array[yIdx] < 0.1) {
+          rp.array[yIdx] = THREE.MathUtils.randFloat(24, 38);
+          rp.array[i*3] = THREE.MathUtils.randFloat(-42, 42);
+          rp.array[i*3+2] = THREE.MathUtils.randFloat(-30, 30);
+        }
+      }
+      rp.needsUpdate = true;
+
+      rail.setFocusPoint(focusTarget);
+      rail.update(t, post);
+
+      post.render(dt, t);
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      post.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>
