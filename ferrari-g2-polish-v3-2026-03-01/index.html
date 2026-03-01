@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ferrari Commercial G2.5 - Polished Lookdev v3</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; }
+        canvas { display: block; }
+        #info { 
+            position: absolute; top: 20px; width: 100%; text-align: center; 
+            color: #888; font-family: 'Helvetica Neue', Arial, sans-serif; 
+            pointer-events: none; font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+            opacity: 0.7;
+        }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #444; font-family: sans-serif; font-size: 12px; letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Ferrari Commercial G2.5 | Polished v3</div>
+    <div id="loading">INITIALIZING ASSETS...</div>
+    
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+
+        // --- Configuration ---
+        const ASSETS = {
+            horse: '../../assets/hero_horse.glb',
+            chair: '../../assets/premium_chair/modern_arm_chair_01_1k.gltf'
+        };
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x020202); 
+        scene.fog = new THREE.FogExp2(0x020202, 0.035); 
+
+        // --- Camera (Cinematic Framing) ---
+        // Maintaining top-down ¾ feel but slightly tighter on the hero
+        const camera = new THREE.PerspectiveCamera(28, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(4.2, 2.8, 6.5); 
+        camera.lookAt(0, 0.6, 0);
+
+        // --- Renderer ---
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true, 
+            powerPreference: "high-performance",
+            stencil: false,
+            depth: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Cap for performance
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2; 
+        document.body.appendChild(renderer.domElement);
+
+        // --- Controls (Dev only, usually locked in final) ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 2;
+        controls.maxDistance = 15;
+        controls.target.set(0, 0.6, 0);
+
+        // --- Lighting ---
+        
+        // 1. Hero Top Spot (Sharp shadows, high drama)
+        const spotLight = new THREE.SpotLight(0xffffff, 300); 
+        spotLight.position.set(0, 8, 1);
+        spotLight.angle = Math.PI / 8;
+        spotLight.penumbra = 0.4;
+        spotLight.decay = 1.5;
+        spotLight.distance = 20;
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        spotLight.shadow.bias = -0.0001;
+        spotLight.shadow.normalBias = 0.02;
+        scene.add(spotLight);
+        scene.add(spotLight.target);
+        spotLight.target.position.set(0, 0, 0);
+
+        // 2. Rim Light (Cool blue, defines silhouette against void)
+        const rimLight = new THREE.SpotLight(0xcceeff, 80);
+        rimLight.position.set(-3, 2, -4);
+        rimLight.lookAt(0, 0.5, 0);
+        scene.add(rimLight);
+
+        // 3. Fill (Subtle ambient lift)
+        const ambientLight = new THREE.AmbientLight(0x222222, 0.5); 
+        scene.add(ambientLight);
+
+        // 4. White Boost (Specific to horse material read)
+        // A low-intensity rect area light approximation for under-lighting
+        const bounceLight = new THREE.PointLight(0xffffff, 20, 5);
+        bounceLight.position.set(0, -1, 1);
+        scene.add(bounceLight);
+
+        // --- Materials ---
+
+        // Floor - Infinite glossy black
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x010101,
+            roughness: 0.1,
+            metalness: 0.8,
+        });
+
+        // Treadmill Belt
+        const beltMat = new THREE.MeshStandardMaterial({ 
+            color: 0x050505,
+            roughness: 0.9,
+            metalness: 0.2
+        });
+
+        // --- Environment ---
+        
+        // Floor Plane
+        const floorGeo = new THREE.PlaneGeometry(60, 60);
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Treadmill Base
+        const treadmillGroup = new THREE.Group();
+        const baseGeo = new THREE.BoxGeometry(1.0, 0.1, 3.5);
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2, metalness: 0.8 });
+        const base = new THREE.Mesh(baseGeo, baseMat);
+        base.position.y = 0.05;
+        base.receiveShadow = true;
+        treadmillGroup.add(base);
+
+        // Moving Belt Mesh
+        const beltGeo = new THREE.PlaneGeometry(0.9, 3.4);
+        const belt = new THREE.Mesh(beltGeo, beltMat);
+        belt.rotation.x = -Math.PI / 2;
+        belt.position.y = 0.11;
+        belt.receiveShadow = true;
+        treadmillGroup.add(belt);
+        scene.add(treadmillGroup);
+
+
+        // --- Asset Loading ---
+        const loader = new GLTFLoader();
+        let mixer;
+
+        // LOAD MANAGER
+        const manager = new THREE.LoadingManager();
+        manager.onLoad = function ( ) {
+            document.getElementById('loading').style.display = 'none';
+        };
+        const gltfLoader = new GLTFLoader(manager);
+
+        // 1. Load & Instance Chairs
+        gltfLoader.load( ASSETS.chair, ( gltf ) => {
+            const chairModel = gltf.scene.children[0]; // Assuming single mesh root
+            let chairGeo, chairMat;
+
+            // Extract geometry and material
+            chairModel.traverse((child) => {
+                if (child.isMesh) {
+                    chairGeo = child.geometry.clone();
+                    // Override material for consistent "dark void" premium look
+                    chairMat = new THREE.MeshStandardMaterial({
+                        color: 0x1a1a1a,
+                        roughness: 0.4,
+                        metalness: 0.6,
+                        side: THREE.DoubleSide
+                    });
+                }
+            });
+
+            if (chairGeo && chairMat) {
+                // Instance Setup
+                const count = 120; // Reduced count for cleaner look
+                const chairs = new THREE.InstancedMesh(chairGeo, chairMat, count);
+                chairs.castShadow = true;
+                chairs.receiveShadow = true;
+
+                const dummy = new THREE.Object3D();
+                let idx = 0;
+                
+                // Ring placement logic
+                const radius = 6.5;
+                const total = 30; // Chairs per ring
+                
+                for (let i = 0; i < total; i++) {
+                     const angle = (i / total) * Math.PI * 2;
+                     
+                     // Leave gap for camera
+                     if (angle > Math.PI * 0.4 && angle < Math.PI * 0.6) continue;
+
+                     // Position
+                     const x = Math.cos(angle) * radius;
+                     const z = Math.sin(angle) * radius;
+                     
+                     dummy.position.set(x, 0, z);
+                     
+                     // Face center
+                     dummy.lookAt(0, 0, 0);
+                     
+                     // Random slight variation
+                     dummy.rotateY( (Math.random() - 0.5) * 0.2 );
+                     
+                     dummy.updateMatrix();
+                     chairs.setMatrixAt(idx++, dummy.matrix);
+                }
+                
+                chairs.count = idx;
+                scene.add(chairs);
+            }
+        });
+
+        // 2. Load Hero Horse
+        gltfLoader.load( ASSETS.horse, ( gltf ) => {
+            const model = gltf.scene;
+            
+            // Material Overrides for "White Premium" Look
+            const whiteHorseMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                roughness: 0.4,
+                metalness: 0.1,
+                clearcoat: 0.3,
+                clearcoatRoughness: 0.2,
+                sheen: 1.0,
+                sheenColor: 0xffffff
+            });
+
+            model.traverse((o) => {
+                if (o.isMesh) {
+                    o.castShadow = true;
+                    o.receiveShadow = true;
+                    o.material = whiteHorseMat; // Force white material
+                }
+            });
+
+            // Adjust scaling to fit treadmill
+            // Assuming hero_horse.glb is roughly unit scale or slightly larger
+            // We need it to fit on a 1m wide treadmill.
+            // Bounding box check would be ideal, but visual tuning:
+            model.scale.set(0.8, 0.8, 0.8); 
+            model.position.set(0, 0.11, 0); // On top of belt
+
+            scene.add(model);
+
+            // Animation
+            if (gltf.animations && gltf.animations.length > 0) {
+                mixer = new THREE.AnimationMixer(model);
+                // Play first clip (usually gallop/run)
+                const action = mixer.clipAction(gltf.animations[0]);
+                action.timeScale = 1.2; 
+                action.play();
+            }
+        });
+
+
+        // --- Animation Loop ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            
+            if (mixer) mixer.update(delta);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // --- Resize ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
