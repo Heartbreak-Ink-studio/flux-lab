@@ -43,8 +43,8 @@
 
         // --- Scene Setup ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020202); // Deep void
-        scene.fog = new THREE.FogExp2(0x020202, 0.025); // Volumetric feel
+        scene.background = new THREE.Color(0x080808); // Deep void, lifted slightly for readability
+        scene.fog = new THREE.FogExp2(0x080808, 0.014); // Lighter fog so subject stays visible
 
         // --- Camera (Cinema) ---
         const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -58,7 +58,7 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
+        renderer.toneMappingExposure = 1.35;
         document.body.appendChild(renderer.domElement);
 
         // --- Controls ---
@@ -72,7 +72,7 @@
         // --- Lighting (Chiaroscuro) ---
 
         // 1. Key Light (The "Spotlight")
-        const spotLight = new THREE.SpotLight(0xffffff, 2000); 
+        const spotLight = new THREE.SpotLight(0xffffff, 2800); 
         spotLight.position.set(0, 8, 2);
         spotLight.angle = Math.PI / 8;
         spotLight.penumbra = 0.5;
@@ -85,7 +85,7 @@
         scene.add(spotLight);
 
         // 2. Rim Light (Cold)
-        const rimLight = new THREE.SpotLight(0xaaccff, 800);
+        const rimLight = new THREE.SpotLight(0xaaccff, 1100);
         rimLight.position.set(0, 3, -6);
         rimLight.lookAt(0, 1.5, 0);
         rimLight.angle = Math.PI / 4;
@@ -93,7 +93,7 @@
         scene.add(rimLight);
 
         // 3. Fill (Very dark)
-        const ambient = new THREE.AmbientLight(0x111111, 0.5); 
+        const ambient = new THREE.AmbientLight(0x202020, 0.85); 
         scene.add(ambient);
 
         // --- Materials ---
@@ -239,8 +239,8 @@
             const delta = clock.getDelta();
             if ( mixer ) mixer.update( delta );
 
-            // Animate Belt
-            beltTex.offset.y -= delta * 1.5; // Move texture
+            // Animate Belt (aligned with horse stride direction)
+            beltTex.offset.y += delta * 1.5; // Reversed per feedback
             
             controls.update();
             renderer.render( scene, camera );
