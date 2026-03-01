@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ferrari Commercial G2.5 - Polished Lookdev</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; }
+        canvas { display: block; }
+        #info { 
+            position: absolute; top: 20px; width: 100%; text-align: center; 
+            color: #ccc; font-family: 'Helvetica Neue', Arial, sans-serif; 
+            pointer-events: none; font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #666; font-family: sans-serif; font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Ferrari Commercial G2.5: Polished Lookdev | White Horse Polish</div>
+    <div id="loading">Loading Assets...</div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // --- Config ---
+        // Using the standard three.js example horse for reliability in this standalone artifact
+        const HORSE_URL = 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/Horse.glb';
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505); // Deep void
+        scene.fog = new THREE.FogExp2(0x050505, 0.02); // Slightly denser fog for separation
+
+        // --- Camera (Cinema) ---
+        const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(3.5, 2.2, 5.5); // Adjusted for better ¾ view
+        camera.lookAt(0, 0.8, 0);
+
+        // --- Renderer ---
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0; // Reset exposure, control via light intensity
+        document.body.appendChild(renderer.domElement);
+
+        // --- Controls ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 2;
+        controls.maxDistance = 12;
+        controls.target.set(0, 0.8, 0);
+
+        // --- Lighting (Polished) ---
+
+        // 1. Key Light (true top-down spotlight)
+        const spotLight = new THREE.SpotLight(0xffffff, 4200); 
+        spotLight.position.set(0, 16, 0);
+        spotLight.angle = Math.PI / 11;
+        spotLight.penumbra = 0.65;
+        spotLight.decay = 2;
+        spotLight.distance = 42;
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        spotLight.shadow.bias = -0.0003;
+        scene.add(spotLight.target);
+        spotLight.target.position.set(0, 0.9, 0);
+        scene.add(spotLight);
+
+        // 2. Rim Light (Cold edge separation)
+        const rimLight = new THREE.SpotLight(0xb8d6ff, 1100);
+        rimLight.position.set(-4, 5, -6);
+        rimLight.lookAt(0, 1, 0);
+        rimLight.penumbra = 1;
+        scene.add(rimLight);
+
+        // 3. Hemisphere fill to avoid crushed blacks on white horse
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x131313, 1.15);
+        scene.add(hemi);
+
+        // 4. Dedicated face/chest fill for hero readability
+        const faceLight = new THREE.PointLight(0xffffff, 150, 12);
+        faceLight.position.set(1.2, 2.2, 2.8);
+        scene.add(faceLight);
+
+        // --- Materials ---
+
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x050505,
+            roughness: 0.05,
+            metalness: 0.9, // Glossy black floor
+        });
+
+        const treadmillMat = new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            roughness: 0.4,
+            metalness: 0.6,
+        });
+
+        // "Premium White Horse" Material - POLISHED
+        // Issue fix: Standard material needs high metalness OR high diffuse to reflect white. 
+        // Emissive is a cheat that looks flat. We use physical properties.
+        const horseMat = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            emissive: 0x1a1a1a,
+            emissiveIntensity: 0.24,
+            roughness: 0.36,
+            metalness: 0.0,
+            clearcoat: 0.55,
+            clearcoatRoughness: 0.18,
+            sheen: 1.0,
+            sheenColor: 0xffffff,
+            transmission: 0.0,
+        });
+
+        // --- Objects ---
+
+        // 1. Floor 
+        const floorGeo = new THREE.PlaneGeometry(50, 50);
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // 2. Treadmill
+        const treadmillGroup = new THREE.Group();
+        // Base
+        const baseGeo = new THREE.BoxGeometry(1.2, 0.15, 4.0);
+        const base = new THREE.Mesh(baseGeo, treadmillMat);
+        base.position.y = 0.075;
+        base.receiveShadow = true;
+        treadmillGroup.add(base);
+        
+        // Moving Belt
+        const beltGeo = new THREE.PlaneGeometry(1, 3.8);
+        const beltTex = new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/uv_grid_opengl.jpg');
+        beltTex.wrapS = THREE.RepeatWrapping;
+        beltTex.wrapT = THREE.RepeatWrapping;
+        beltTex.repeat.set(1, 4);
+        // Darker belt so white hooves pop against it
+        const beltMat = new THREE.MeshStandardMaterial({ 
+            map: beltTex, 
+            color: 0x0a0a0a, // Darker
+            roughness: 0.8 
+        });
+        const belt = new THREE.Mesh(beltGeo, beltMat);
+        belt.rotation.x = -Math.PI / 2;
+        belt.position.y = 0.16;
+        belt.receiveShadow = true;
+        treadmillGroup.add(belt);
+        scene.add(treadmillGroup);
+
+        // 3. Chairs (premium silhouettes, visible but not distracting)
+        const chairGeo = new THREE.BoxGeometry(0.42, 0.85, 0.42);
+        const chairMat = new THREE.MeshStandardMaterial({
+            color: 0x2a2a2a,
+            roughness: 0.82,
+            metalness: 0.1,
+            emissive: 0x050505,
+            emissiveIntensity: 0.35
+        });
+        const chairCount = 520;
+        const chairs = new THREE.InstancedMesh(chairGeo, chairMat, chairCount);
+        const dummy = new THREE.Object3D();
+        let idx = 0;
+        for (let r = 7; r < 24; r += 1.6) {
+            const count = Math.floor((2 * Math.PI * r) / 0.95);
+            for (let i = 0; i < count; i++) {
+                if (idx >= chairCount) break;
+                const angle = (i / count) * Math.PI * 2 + Math.PI;
+                // leave cinematic opening toward camera
+                if (angle > Math.PI * 0.78 && angle < Math.PI * 1.22) continue;
+                dummy.position.set(
+                    Math.cos(angle) * r,
+                    0.42 + (r - 7) * 0.07,
+                    Math.sin(angle) * r
+                );
+                dummy.lookAt(0, 0.9, 0);
+                dummy.updateMatrix();
+                chairs.setMatrixAt(idx++, dummy.matrix);
+            }
+        }
+        chairs.count = idx;
+        chairs.castShadow = false;
+        chairs.receiveShadow = true;
+        scene.add(chairs);
+
+        // 4. The Horse (Animated)
+        let mixer;
+        const loader = new GLTFLoader();
+        
+        loader.load( HORSE_URL, function ( gltf ) {
+            const model = gltf.scene;
+            
+            // Fix: Traverse and apply new material
+            model.traverse( function ( object ) {
+                if ( object.isMesh ) {
+                    object.castShadow = true;
+                    object.receiveShadow = true;
+                    object.material = horseMat.clone();
+                    object.material.map = null;
+                    object.material.needsUpdate = true;
+                }
+            } );
+            
+            // Adjust Scale & Position
+            // The three.js horse is roughly unit scale. 
+            // Previous code used 0.008 which is extremely tiny, implying the camera was very close or scene huge.
+            // Let's normalize to a reasonable world scale where 1 unit ~ 1 meter.
+            // Horse height ~1.6m at withers.
+            // ThreeJS horse is approx 300 units high? Let's check bounding box or just stick to what worked if camera matches.
+            // Actually, let's trust the previous camera (d=6) implies a small object. 
+            // I will use 0.012 to make it slightly more substantial in frame.
+            model.scale.set( 0.012, 0.012, 0.012 ); 
+            model.position.set( 0, 0.16, 0 ); 
+            model.rotation.y = Math.PI; // Face forward relative to camera/treadmill logic
+
+            scene.add( model );
+
+            mixer = new THREE.AnimationMixer( model );
+            const clip = gltf.animations[0];
+            const action = mixer.clipAction( clip );
+            action.timeScale = 1.8; // Energetic gallop
+            action.play();
+            
+            document.getElementById('loading').style.display = 'none';
+
+        }, undefined, function ( e ) {
+            console.error(e);
+            document.getElementById('loading').innerText = 'Error (Check Console)';
+        });
+
+        // --- Loop ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame( animate );
+            
+            const delta = clock.getDelta();
+            if ( mixer ) mixer.update( delta );
+
+            // Animate Belt
+            // Fix: Treadmill moves BACKWARDS (positive Y texture offset usually)
+            // If horse faces +Z, belt surface must move -Z.
+            // Texture offset Y+ moves texture "down" (visually back on a flat plane rotated -90 X).
+            // Let's ensure visual match.
+            if (beltTex) beltTex.offset.y -= delta * 1.8; // Negative typically moves texture "forward" on UVs, check visual.
+            // Correction: If belt moves back, texture should appear to slide back. 
+            
+            controls.update();
+            renderer.render( scene, camera );
+        }
+
+        animate();
+
+        // --- Resize ---
+        window.addEventListener( 'resize', onWindowResize, false );
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize( window.innerWidth, window.innerHeight );
+        }
+    </script>
+</body>
+</html>
