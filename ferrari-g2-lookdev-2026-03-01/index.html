@@ -72,9 +72,9 @@
         // --- Lighting (Chiaroscuro) ---
 
         // 1. Key Light (The "Spotlight")
-        const spotLight = new THREE.SpotLight(0xffffff, 2800); 
-        spotLight.position.set(0, 8, 2);
-        spotLight.angle = Math.PI / 8;
+        const spotLight = new THREE.SpotLight(0xffffff, 3000); 
+        spotLight.position.set(0, 10, 0);
+        spotLight.angle = Math.PI / 9;
         spotLight.penumbra = 0.5;
         spotLight.decay = 2;
         spotLight.distance = 20;
@@ -112,11 +112,11 @@
 
         // "Sweaty Horse" Material
         const horseMat = new THREE.MeshStandardMaterial({
-            color: 0x3d2b1f, // Dark bay
-            roughness: 0.2, // Wet/Sweaty
+            color: 0xf2f2f0, // White coat
+            roughness: 0.24, // Slightly rough to retain form under hard light
             metalness: 0.0,
             clearcoat: 1.0, // Coat shine
-            clearcoatRoughness: 0.1
+            clearcoatRoughness: 0.12
         });
 
         // --- Objects ---
