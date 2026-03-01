@@ -71,17 +71,19 @@
 
         // --- Lighting (Chiaroscuro) ---
 
-        // 1. Key Light (The "Spotlight")
-        const spotLight = new THREE.SpotLight(0xffffff, 3000); 
-        spotLight.position.set(0, 10, 0);
-        spotLight.angle = Math.PI / 9;
-        spotLight.penumbra = 0.5;
+        // 1. Key Light (Top-down spotlight)
+        const spotLight = new THREE.SpotLight(0xffffff, 4200); 
+        spotLight.position.set(0, 14, 0);
+        spotLight.angle = Math.PI / 10;
+        spotLight.penumbra = 0.6;
         spotLight.decay = 2;
-        spotLight.distance = 20;
+        spotLight.distance = 28;
         spotLight.castShadow = true;
         spotLight.shadow.mapSize.width = 2048;
         spotLight.shadow.mapSize.height = 2048;
         spotLight.shadow.bias = -0.0001;
+        spotLight.target.position.set(0, 0.9, 0);
+        scene.add(spotLight.target);
         scene.add(spotLight);
 
         // 2. Rim Light (Cold)
@@ -93,8 +95,12 @@
         scene.add(rimLight);
 
         // 3. Fill (Very dark)
-        const ambient = new THREE.AmbientLight(0x202020, 0.85); 
+        const ambient = new THREE.AmbientLight(0x2a2a2a, 1.0); 
         scene.add(ambient);
+
+        // 4. Overhead fill to keep horse readable while preserving contrast
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.6);
+        scene.add(hemi);
 
         // --- Materials ---
 
@@ -112,11 +118,13 @@
 
         // "Sweaty Horse" Material
         const horseMat = new THREE.MeshStandardMaterial({
-            color: 0xf2f2f0, // White coat
-            roughness: 0.24, // Slightly rough to retain form under hard light
+            color: 0xf8f8f6, // Bright white coat
+            emissive: 0x111111, // Prevent crushed blacks on the horse body
+            emissiveIntensity: 0.35,
+            roughness: 0.26,
             metalness: 0.0,
-            clearcoat: 1.0, // Coat shine
-            clearcoatRoughness: 0.12
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.14
         });
 
         // --- Objects ---
@@ -203,8 +211,10 @@
                 if ( object.isMesh ) {
                     object.castShadow = true;
                     object.receiveShadow = true;
-                    // Apply our custom material
-                    object.material = horseMat;
+                    // Force premium white coat material
+                    object.material = horseMat.clone();
+                    if (object.material.map) object.material.map = null;
+                    object.material.needsUpdate = true;
                 }
             } );
             
