@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apollo × Flux | Velvet Interface</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Courier New', Courier, monospace; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: rgba(0, 0, 0, 0.85); color: #fff; z-index: 10;
+            transition: opacity 0.5s ease;
+        }
+        #overlay.hidden { opacity: 0; pointer-events: none; }
+        h1 { font-size: 2rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 0.5rem; text-shadow: 0 0 10px #ff0055; }
+        p { font-size: 0.9rem; opacity: 0.7; margin-bottom: 2rem; }
+        button {
+            background: transparent; border: 2px solid #ff0055; color: #ff0055;
+            padding: 1rem 2rem; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.1em;
+            cursor: pointer; transition: all 0.3s ease;
+        }
+        button:hover { background: #ff0055; color: #fff; box-shadow: 0 0 20px #ff0055; }
+        #ui-layer {
+            position: absolute; bottom: 20px; left: 20px; color: #ff0055;
+            font-size: 0.8rem; pointer-events: none; z-index: 5;
+            text-shadow: 0 0 5px #ff0055;
+        }
+    </style>
+</head>
+<body>
+    <div id="overlay">
+        <h1>Velvet Interface</h1>
+        <p>Audio Reactive Visualizer /// Apollo × Flux</p>
+        <button id="start-btn">Initialize Sequence</button>
+    </div>
+    <div id="ui-layer">
+        SESSION: VELVET_V1<br>
+        BPM: DETECTING...<br>
+        FLUX STATE: ACTIVE
+    </div>
+    <div id="canvas-container"></div>
+
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+
+        // --- Configuration ---
+        const CONFIG = {
+            audioPath: './assets/audio/velvet-interface.mp3',
+            fftSize: 2048,
+            smoothing: 0.85,
+            bars: 64,
+            gridSize: 40,
+            colorA: new THREE.Color(0xff0055), // Neon Pink
+            colorB: new THREE.Color(0x00ffff)  // Cyan
+        };
+
+        // --- Globals ---
+        let scene, camera, renderer, composer, controls;
+        let analyser, dataArray, audioContext, audioSource;
+        let dancerMixer = null;
+        let geometryGroup = new THREE.Group();
+        let bars = [];
+        let particles;
+        let dancer, dancerParts = {};
+        let clock = new THREE.Clock();
+        let isPlaying = false;
+
+        const startBtn = document.getElementById('start-btn');
+        const overlay = document.getElementById('overlay');
+
+        // --- Initialization ---
+        function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.02);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 15, 30);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Post-Processing (Bloom)
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.1;
+            bloomPass.strength = 1.2; // Intense neon glow
+            bloomPass.radius = 0.5;
+
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+            // Build World
+            createFloorGrid();
+            createFrequencyBars();
+            createParticleField();
+            createDancer();
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            const pointLight = new THREE.PointLight(CONFIG.colorA, 2, 100);
+            pointLight.position.set(0, 20, 0);
+            scene.add(pointLight);
+
+            // Events
+            window.addEventListener('resize', onWindowResize);
+            startBtn.addEventListener('click', startExperience);
+        }
+
+        // --- Audio Setup ---
+        async function setupAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = CONFIG.fftSize;
+            analyser.smoothingTimeConstant = CONFIG.smoothing;
+            
+            const response = await fetch(CONFIG.audioPath);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            source.loop = true;
+            source.start(0);
+            
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            isPlaying = true;
+            
+            // Initial kick
+            overlay.classList.add('hidden');
+        }
+
+        function startExperience() {
+            if (!isPlaying) {
+                startBtn.innerText = "LOADING...";
+                setupAudio().catch(err => {
+                    console.error("Audio Load Error:", err);
+                    startBtn.innerText = "ERROR LOADING AUDIO";
+                });
+            }
+        }
+
+        // --- World Building ---
+        function createFloorGrid() {
+            const gridHelper = new THREE.GridHelper(100, CONFIG.gridSize, CONFIG.colorA, 0x222222);
+            gridHelper.position.y = -2;
+            scene.add(gridHelper);
+            
+            // Mirror floor
+            const geometry = new THREE.PlaneGeometry(100, 100);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x000000, 
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+            const plane = new THREE.Mesh(geometry, material);
+            plane.rotation.x = Math.PI / 2;
+            plane.position.y = -2.1;
+            scene.add(plane);
+        }
+
+        function createFrequencyBars() {
+            const geometry = new THREE.BoxGeometry(0.5, 1, 0.5);
+            // Arrange in a circle
+            const radius = 10;
+            const count = CONFIG.bars;
+
+            for (let i = 0; i < count; i++) {
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: CONFIG.colorB,
+                    emissive: CONFIG.colorA,
+                    emissiveIntensity: 0.2,
+                    roughness: 0.1,
+                    metalness: 0.8
+                });
+                
+                const bar = new THREE.Mesh(geometry, material);
+                
+                const angle = (i / count) * Math.PI * 2;
+                bar.position.x = Math.cos(angle) * radius;
+                bar.position.z = Math.sin(angle) * radius;
+                bar.position.y = 0;
+                bar.rotation.y = -angle;
+                
+                bar.userData = { 
+                    initialScale: 1,
+                    index: i 
+                };
+                
+                bars.push(bar);
+                geometryGroup.add(bar);
+            }
+            scene.add(geometryGroup);
+        }
+
+        function createParticleField() {
+            const particleCount = 2000;
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions.push((Math.random() - 0.5) * 100); // x
+                positions.push((Math.random() - 0.5) * 50 + 10);  // y
+                positions.push((Math.random() - 0.5) * 100); // z
+            }
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.2, transparent: true, opacity: 0.6 });
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function createDancer() {
+            const fbxLoader = new FBXLoader();
+            const danceFiles = [
+                './assets/mixamo/hip-hop-dancing.fbx',
+                './assets/mixamo/breakdance-footwork-1.fbx',
+                './assets/mixamo/breakdance-swipes.fbx',
+                './assets/mixamo/flair.fbx',
+                './assets/mixamo/breakdance-freezes.fbx'
+            ];
+
+            const dancers = [];
+            let loaded = 0;
+
+            danceFiles.forEach((file, idx) => {
+                fbxLoader.load(file, (fbx) => {
+                    const performer = fbx;
+                    performer.visible = idx === 0;
+                    performer.scale.setScalar(0.02);
+                    performer.position.set(0, -2.0, 0);
+                    performer.traverse((obj) => {
+                        if (obj.isMesh) {
+                            obj.castShadow = true;
+                            obj.receiveShadow = true;
+                            obj.material = new THREE.MeshStandardMaterial({
+                                color: 0xffffff,
+                                emissive: CONFIG.colorA,
+                                emissiveIntensity: 0.25,
+                                roughness: 0.3,
+                                metalness: 0.6
+                            });
+                        }
+                    });
+                    scene.add(performer);
+
+                    const mixer = new THREE.AnimationMixer(performer);
+                    if (fbx.animations && fbx.animations[0]) {
+                        const action = mixer.clipAction(fbx.animations[0]);
+                        action.play();
+                    }
+
+                    dancers[idx] = { performer, mixer };
+                    loaded++;
+
+                    if (loaded === danceFiles.length) {
+                        dancer = dancers[0].performer;
+                        dancerMixer = dancers[0].mixer;
+                        window.__danceSet = { dancers, active: 0, lastSwitch: 0 };
+                    }
+                }, undefined, () => {
+                    loaded++;
+                    if (loaded === danceFiles.length && dancers.length === 0) {
+                        createFallbackDancer();
+                    }
+                });
+            });
+        }
+
+        function createFallbackDancer() {
+            dancer = new THREE.Group();
+
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                emissive: CONFIG.colorA,
+                emissiveIntensity: 0.35,
+                roughness: 0.25,
+                metalness: 0.55
+            });
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 24, 24), mat);
+            head.position.y = 2.3;
+
+            const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.2, 6, 16), mat);
+            torso.position.y = 1.2;
+
+            const leftArmPivot = new THREE.Group();
+            leftArmPivot.position.set(-0.45, 1.8, 0);
+            const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.9, 4, 12), mat);
+            leftArm.position.y = -0.5;
+            leftArmPivot.add(leftArm);
+
+            const rightArmPivot = new THREE.Group();
+            rightArmPivot.position.set(0.45, 1.8, 0);
+            const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.9, 4, 12), mat);
+            rightArm.position.y = -0.5;
+            rightArmPivot.add(rightArm);
+
+            const leftLegPivot = new THREE.Group();
+            leftLegPivot.position.set(-0.2, 0.5, 0);
+            const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 1.0, 4, 12), mat);
+            leftLeg.position.y = -0.55;
+            leftLegPivot.add(leftLeg);
+
+            const rightLegPivot = new THREE.Group();
+            rightLegPivot.position.set(0.2, 0.5, 0);
+            const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 1.0, 4, 12), mat);
+            rightLeg.position.y = -0.55;
+            rightLegPivot.add(rightLeg);
+
+            dancer.add(head, torso, leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot);
+            dancer.position.set(0, -1.25, 0);
+            scene.add(dancer);
+
+            dancerParts = { leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot, torso };
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+            let bassLevel = 0;
+            let midLevel = 0;
+
+            if (isPlaying && analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                
+                // Audio Reactivity Logic
+                let bassSum = 0;
+                let midSum = 0;
+                
+                // Analyze frequency bands
+                for (let i = 0; i < dataArray.length; i++) {
+                    if (i < 10) bassSum += dataArray[i];
+                    if (i > 10 && i < 50) midSum += dataArray[i];
+                }
+                bassLevel = bassSum / 10 / 255; // 0-1
+                midLevel = midSum / 40 / 255;   // 0-1
+                
+                // Update Bars
+                bars.forEach((bar, i) => {
+                    // Map bars to frequency data chunks
+                    const dataIndex = Math.floor(i * (dataArray.length / CONFIG.bars) * 0.5); // Use lower half of spectrum
+                    const value = dataArray[dataIndex] / 255;
+                    
+                    const targetScale = 1 + (value * 15);
+                    bar.scale.y += (targetScale - bar.scale.y) * 0.2; // Smooth lerp
+                    bar.position.y = (bar.scale.y / 2) - 2; // Keep bottom grounded
+                    
+                    // Color shift based on intensity
+                    const color = new THREE.Color().lerpColors(CONFIG.colorB, CONFIG.colorA, value);
+                    bar.material.color = color;
+                    bar.material.emissiveIntensity = value * 2;
+                });
+                
+                // Update Geometry Group (Rotate)
+                geometryGroup.rotation.y += 0.002 + (bassLevel * 0.01);
+                
+                // Camera Shake on Bass
+                if (bassLevel > 0.6) {
+                    camera.position.x += (Math.random() - 0.5) * 0.1;
+                    camera.position.y += (Math.random() - 0.5) * 0.1;
+                }
+            }
+
+            // Particle Float
+            if (particles) {
+                particles.rotation.y = time * 0.05;
+                particles.rotation.z = time * 0.02;
+            }
+
+            // Center dancer animation (audio-reactive + clip switching)
+            if (window.__danceSet && window.__danceSet.dancers.length > 0) {
+                const set = window.__danceSet;
+                const beatInterval = 60 / 116; // Velvet Interface target BPM
+                const shouldSwitch = (time - set.lastSwitch) > (beatInterval * 8) && bassLevel > 0.42;
+
+                if (shouldSwitch) {
+                    const next = (set.active + 1) % set.dancers.length;
+                    set.dancers[set.active].performer.visible = false;
+                    set.dancers[next].performer.visible = true;
+                    set.active = next;
+                    set.lastSwitch = time;
+                    dancer = set.dancers[next].performer;
+                    dancerMixer = set.dancers[next].mixer;
+                }
+
+                set.dancers.forEach(({ performer, mixer }, idx) => {
+                    const speed = 0.9 + bassLevel * 0.9;
+                    mixer.update(delta * speed * (idx === set.active ? 1.0 : 0.35));
+                    if (idx === set.active) {
+                        const groove = 0.9 + bassLevel * 0.6;
+                        performer.position.y = -2.0 + Math.sin(time * 5.5) * (0.08 + bassLevel * 0.15);
+                        performer.rotation.y = Math.sin(time * 1.2) * 0.28;
+                        performer.scale.setScalar(0.02 * groove);
+                    }
+                });
+            } else if (dancerMixer) {
+                dancerMixer.update(delta);
+            }
+
+            if (dancer && dancerParts.torso) {
+                const groove = 0.9 + bassLevel * 0.6;
+                dancer.position.y = -1.25 + Math.sin(time * 5.5) * (0.12 + bassLevel * 0.2);
+                dancer.rotation.y = Math.sin(time * 1.2) * 0.35;
+                dancerParts.torso.rotation.z = Math.sin(time * 4.0) * 0.12;
+                dancerParts.leftArmPivot.rotation.z = Math.sin(time * 9.0) * (0.7 + midLevel * 0.6);
+                dancerParts.rightArmPivot.rotation.z = -Math.sin(time * 9.0 + 0.7) * (0.7 + midLevel * 0.6);
+                dancerParts.leftLegPivot.rotation.x = Math.sin(time * 6.0) * (0.4 + bassLevel * 0.35);
+                dancerParts.rightLegPivot.rotation.x = -Math.sin(time * 6.0 + 0.8) * (0.4 + bassLevel * 0.35);
+                dancer.scale.setScalar(groove);
+            }
+
+            controls.update();
+            composer.render();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Start
+        init();
+        animate();
+    </script>
+</body>
+</html>
